@@ -9,11 +9,12 @@ Complete the information below regarding your group.
 ## Group and project information
 
 ### Group members and zIDs
-- Member 1 (zID1) - Group leader
-- Member 2 (zID2) - role
-- Member 3 (zID3) - role
-- Member 4 (zID4) - role
-- Member 5 (zID5) - role
+- Brendan	(z5632728): Research consultant and Model analysis of SARIMAX + LSTM
+- Daniel	(z5623647): Presentation/Communication Lead and Model analysis of SARIMAX + LSTM
+- Kam	(z5618444): Project Manager, Presentation/Communication Lead and 
+Model lead of PatchTST + Comparison
+- Kelvin (z5502200):	Logistics coordinator, Model lead of PatchTST + Comparison
+
 
 ### Brief project description
 
