@@ -12,7 +12,8 @@ if __name__ == '__main__':
     parser.add_argument('--random_seed', type=int, default=2021, help='random seed')
 
     # basic config
-    parser.add_argument('--is_training', type=int, required=False, default=1, help='status')
+    #parser.add_argument('--is_training', type=int, required=False, default=1, help='status')
+    parser.add_argument('--is_training', type=int, required=False, default=0, help='status')
     parser.add_argument('--model_id', type=str, required=False, default='test', help='model id')
     parser.add_argument('--model', type=str, required=False, default='PatchTST',
                         help='model name, options: [PatchTST, Autoformer, Informer, Transformer]')
@@ -20,7 +21,8 @@ if __name__ == '__main__':
     # data loader
     parser.add_argument('--data', type=str, required=False, default='custom', help='dataset type')
     parser.add_argument('--root_path', type=str, default='data/NSW/', help='root path of the data file')
-    parser.add_argument('--data_path', type=str, default='train_scaled.csv', help='data file')
+    #parser.add_argument('--data_path', type=str, default='train_scaled.csv', help='data file')
+    parser.add_argument('--data_path', type=str, default='test_scaled.csv', help='data file')
     parser.add_argument('--features', type=str, default='MS',
                         help='forecasting task, options:[M, S, MS]; M:multivariate predict multivariate, S:univariate predict univariate, MS:multivariate predict univariate')
     parser.add_argument('--target', type=str, default='TOTALDEMAND', help='target feature in S or MS task')
