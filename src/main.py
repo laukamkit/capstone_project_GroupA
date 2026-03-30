@@ -4,6 +4,7 @@ import argparse
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='PatchTST Runs for Single-Variable and Multi-Variable Time Series Forecasting')
     parser.add_argument('--type', type=str, default='single', help='type of experiment: single or multi')
+    parser.add_argument('--is_training', type=int, default=1, help='whether to train the model: 1 for training, 0 for testing')
     args = parser.parse_args()
 
     HORIZONS = [48, 96, 168]#[48, 96, 168, 336, 720]
@@ -18,20 +19,24 @@ if __name__ == '__main__':
                     # You can set the hyperparameters for each experiment here. For simplicity, I'm just setting seq_len and pred_len.
                     # You may want to set other hyperparameters as well (e.g. learning rate, batch size, etc.) based on the specific experiment.
                     single_var_run_string = (f'python src/patchtst_supervised.py --model_id '
-                                  f'"PatchTST_h{horizon}_c{context_length}_Single_Variate" '
+                                  f'"PatchTST_h{horizon}_c{context_length}_Single_Variate_seed{seed}" '
+                                  f'--is_training {args.is_training} '
                                   f'--features S '
                                   f'--enc_in 1 '
                                   f'--scale '
+                                  f'--embed timeF '
                                   f'--seq_len {context_length} '
                                   f'--pred_len {horizon} '
                                   f'--random_seed {seed}')
 
                     multi_var_run_string = (f'python src/patchtst_supervised.py --model_id '
-                                  f'"PatchTST_h{horizon}_c{context_length}_Multi_Variate" '
+                                  f'"PatchTST_h{horizon}_c{context_length}_Multi_Variate_seed{seed}" '
+                                  f'--is_training {args.is_training} '
                                   f'--features MS '
                                   f'--enc_in 2 '
                                   f'--feature_cols TEMPERATURE '
                                   f'--scale '
+                                  f'--embed timeF '
                                   f'--seq_len {context_length} '
                                   f'--pred_len {horizon} '
                                   f'--random_seed {seed}')

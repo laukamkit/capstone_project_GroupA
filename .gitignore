@@ -2,3 +2,8 @@
 #requirements*.txt
 
 src/checkpoint/*
+*.pyc
+__pycache__/
+
+*.pth
+*.npy
