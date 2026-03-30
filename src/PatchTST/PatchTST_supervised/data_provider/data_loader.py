@@ -210,6 +210,11 @@ class Dataset_Custom(Dataset):
 
         self.features = features
         self.target = target
+        if len(feature_cols) > 0:
+            self.feature_cols = feature_cols
+        else:
+            self.feature_cols = []
+        
         self.feature_cols = feature_cols
         self.date_col = date_col
         self.scale = scale
