@@ -7,3 +7,7 @@ __pycache__/
 
 *.pth
 *.npy
+
+*.png
+
+test_results/*
