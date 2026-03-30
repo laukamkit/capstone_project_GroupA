@@ -24,9 +24,9 @@ parser.add_argument('--model', type=str, required=False, default='PatchTST',
 parser.add_argument('--data', type=str, required=False, default='custom', help='dataset type')
 parser.add_argument('--root_path', type=str, default=os.path.join(os.path.dirname(os.path.abspath(__file__)), '..' , '..', 'data', 'NSW') + os.sep, 
                     help='root path of the data file')
-parser.add_argument('--training_data_path', type=str, default='train_scaled.csv', help='data file')
-parser.add_argument('--validation_data_path', type=str, default='val_scaled.csv', help='data file')
-parser.add_argument('--test_data_path', type=str, default='test_scaled.csv', help='data file')
+parser.add_argument('--training_data_path', type=str, default='train.csv', help='data file')
+parser.add_argument('--validation_data_path', type=str, default='validation.csv', help='data file')
+parser.add_argument('--test_data_path', type=str, default='test.csv', help='data file')
 parser.add_argument('--features', type=str, default='S',
                     help='forecasting task, options:[M, S, MS]; M:multivariate predict multivariate, S:univariate predict univariate, MS:multivariate predict univariate')
 parser.add_argument('--target', type=str, default='TOTALDEMAND', help='target feature in S or MS task')

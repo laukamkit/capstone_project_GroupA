@@ -14,7 +14,7 @@ if __name__ == '__main__':
     BATCH_SIZE = 64
     EPOCHS = 20
     PATIENCE = 5
-    model_ids = [f'h{h}_c{c}' for h in HORIZONS for c in CONTEXT_LENGTHS if c >= h]
+
     for horizon in HORIZONS:
         for context_length in CONTEXT_LENGTHS:
             if context_length >= horizon:
@@ -22,8 +22,9 @@ if __name__ == '__main__':
                     print(f'Running experiment with horizon {horizon}, context length {context_length}, and seed {seed}...')
                     # You can set the hyperparameters for each experiment here. For simplicity, I'm just setting seq_len and pred_len.
                     # You may want to set other hyperparameters as well (e.g. learning rate, batch size, etc.) based on the specific experiment.
+                    model_id = args.model_id if args.model_id != 'UNK' else f'PatchTST_h{horizon}_c{context_length}_seed{seed}'
                     single_var_run_string = (f'python src/PatchTST/patchtst_supervised.py --model_id '
-                                f'"PatchTST_h{horizon}_c{context_length}_seed{seed}_Single_Variate" '
+                                f'"{model_id}_Single_Variate" '
                                 f'--is_training {args.is_training} '
                                 f'--features S '
                                 f'--enc_in 1 '
@@ -37,11 +38,12 @@ if __name__ == '__main__':
                                 f'--patience {PATIENCE} '
                                 f'--seq_len {context_length} '
                                 f'--pred_len {horizon} '
+                                f'--scale '
                                 f'--inverse '
                                 f'--random_seed {seed}')
 
                     multi_var_run_string = (f'python src/PatchTST/patchtst_supervised.py --model_id '
-                                f'"PatchTST_h{horizon}_c{context_length}_seed{seed}_Multi_Variate" '
+                                f'"{model_id}_Multi_Variate" '
                                 f'--is_training {args.is_training} '
                                 f'--features MS '
                                 f'--enc_in 2 '
@@ -57,6 +59,7 @@ if __name__ == '__main__':
                                 f'--seq_len {context_length} '
                                 f'--pred_len {horizon} '
                                 f'--inverse '
+                                f'--scale '
                                 f'--random_seed {seed}')
 
                     if args.type == 'single':

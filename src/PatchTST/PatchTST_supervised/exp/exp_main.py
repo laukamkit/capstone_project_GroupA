@@ -160,7 +160,6 @@ class Exp_Main(Exp_Basic):
                     else:
                         if self.args.output_attention:
                             outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)[0]
-                            
                         else:
                             outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark, batch_y)
                     # print(outputs.shape,batch_y.shape)
@@ -223,11 +222,11 @@ class Exp_Main(Exp_Basic):
 
         preds = []
         trues = []
+        preds_inverse = []
+        trues_inverse = []
         timestamps = []
         inputx = []
         folder_path = os.path.join(self.args.results, setting)
-        if not os.path.exists(folder_path):
-            os.makedirs(folder_path)
 
         self.model.eval()
         with torch.no_grad():
@@ -270,23 +269,37 @@ class Exp_Main(Exp_Basic):
                 batch_y = batch_y.detach().cpu().numpy()
                 if self.args.inverse:
                     shape = batch_y.shape
-                    if self.args.features == 'MS':
-                        outputs = np.tile(outputs, [1, 1, batch_y.shape[-1]])
-                    outputs = test_data.inverse_transform(outputs.reshape(shape[0] * shape[1], -1)).reshape(shape)
-                    batch_y = test_data.inverse_transform(batch_y.reshape(shape[0] * shape[1], -1)).reshape(shape)
+                    if test_data.scale and self.args.features == 'MS':
+                        n_features = test_data.scaler.n_features_in_
+                        outputs_inverse = np.tile(outputs, [1, 1, n_features])
+                        outputs_inverse = test_data.inverse_transform(outputs_inverse.reshape(shape[0] * shape[1], n_features))[:, -1:].reshape(shape)
+                        batch_y_tiled = np.tile(batch_y, [1, 1, n_features])
+                        batch_y_inverse = test_data.inverse_transform(batch_y_tiled.reshape(shape[0] * shape[1], n_features))[:, -1:].reshape(shape)
+                    else:
+                        outputs_inverse = test_data.inverse_transform(outputs.reshape(shape[0] * shape[1], -1)).reshape(shape)
+                        batch_y_inverse = test_data.inverse_transform(batch_y.reshape(shape[0] * shape[1], -1)).reshape(shape)
         
                 batch_time = batch_time.detach().cpu().numpy()
+                pred_inverse = None
+                true_inverse = None
+                if self.args.inverse:
+                    pred_inverse = outputs_inverse  # outputs.detach().cpu().numpy()  # .squeeze()
+                    true_inverse = batch_y_inverse  # batch_y.detach().cpu().numpy()  # .squeeze()
+
                 pred = outputs  # outputs.detach().cpu().numpy()  # .squeeze()
                 true = batch_y  # batch_y.detach().cpu().numpy()  # .squeeze()
                 ts = batch_time
 
                 preds.append(pred)
                 trues.append(true)
+                if self.args.inverse:
+                    preds_inverse.append(pred_inverse)
+                    trues_inverse.append(true_inverse)
                 timestamps.append(ts)
                 inputx.append(batch_x.detach().cpu().numpy())
                 # if i % 20 == 0:
                 #     input = batch_x.detach().cpu().numpy()
-                    # if self.args.inverse:
+                    # if test_data.scale and self.args.inverse:
                     #     shape = input.shape
                     #     input = test_data.inverse_transform(input.reshape(shape[0] * shape[1], -1)).reshape(shape)
                 #     gt = np.concatenate((input[0, :, -1], true[0, :, -1]), axis=0)
@@ -298,29 +311,45 @@ class Exp_Main(Exp_Basic):
             exit()
         preds = np.array(preds)
         trues = np.array(trues)
+        if self.args.inverse:
+            preds_inverse = np.array(preds_inverse)
+            trues_inverse = np.array(trues_inverse)
         timestamps = np.array(timestamps)
         inputx = np.array(inputx)
 
         preds = preds.reshape(-1, preds.shape[-2], preds.shape[-1])
         trues = trues.reshape(-1, trues.shape[-2], trues.shape[-1])
+        if self.args.inverse:
+            preds_inverse = preds_inverse.reshape(-1, preds_inverse.shape[-2], preds_inverse.shape[-1])
+            trues_inverse = trues_inverse.reshape(-1, trues_inverse.shape[-2], trues_inverse.shape[-1])
         timestamps = timestamps.reshape(-1, timestamps.shape[-1])
         inputx = inputx.reshape(-1, inputx.shape[-2], inputx.shape[-1])
 
         # result save
         mae, mse, rmse, mape, mspe, rse, corr = metric(preds, trues)
-        print('mse:{}, mae:{}, rse:{}'.format(mse, mae, rse))
-        f = open("result.txt", 'a')
+        if self.args.inverse:
+            mae_inverse, mse_inverse, rmse_inverse, mape_inverse, mspe_inverse, rse_inverse, corr_inverse = metric(preds_inverse, trues_inverse)
+            print('Inverse Metrics - mse:{}, mae:{}, rmse:{}, rse:{}\n'.format(mse_inverse, mae_inverse, rmse_inverse, rse_inverse))
+            
+        print('mse:{}, mae:{}, rmse:{}, rse:{}'.format(mse, mae, rmse, rse))
+        f = open("src/PatchTST/results/result.txt", 'a')
         f.write(setting + "  \n")
-        f.write('mse:{}, mae:{}, rse:{}'.format(mse, mae, rse))
+        if self.args.inverse:
+            f.write('mse:{}, mae:{}, rse:{}, mse_inverse:{}, rmse_inverse:{}, mae_inverse:{}, rse_inverse:{}'.format(mse, mae, rse, mse_inverse, rmse_inverse, mae_inverse, rse_inverse))
+        else:
+            f.write('mse:{}, mae:{}, rse:{}'.format(mse, mae, rse))
         f.write('\n')
         f.write('\n')
         f.close()
 
-        np.save(folder_path + '_metrics.npy', np.array([mae, mse, rmse, mape, mspe,rse, corr.mean()]))
+        # np.save(folder_path + '_metrics.npy', np.array([mae, mse, rmse, mape, mspe,rse, corr.mean()]))
         np.save(folder_path + '_pred.npy', preds)
         np.save(folder_path + '_true.npy', trues)
         np.save(folder_path + '_ts.npy', timestamps)
-        np.save(folder_path + '_x.npy', inputx)
+        # np.save(folder_path + '_x.npy', inputx)
+        if self.args.inverse:
+            np.save(folder_path + '_pred_inverse.npy', preds_inverse)
+            np.save(folder_path + '_true_inverse.npy', trues_inverse)
         return
 
     def predict(self, setting, load=False):
