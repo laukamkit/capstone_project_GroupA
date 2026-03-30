@@ -1,1 +1,13 @@
 *.venv
+#requirements*.txt
+
+src/checkpoint/*
+*.pyc
+__pycache__/
+
+*.pth
+*.npy
+
+*.png
+
+test_results/*
