@@ -40,6 +40,7 @@ if __name__ == '__main__':
                                 f'--patience {PATIENCE} '
                                 f'--seq_len {context_length} '
                                 f'--pred_len {horizon} '
+                                f'--inverse '
                                 f'--lradj type1 '
                                 f'--random_seed {seed}')
 
@@ -62,6 +63,7 @@ if __name__ == '__main__':
                                 f'--patience {PATIENCE} '
                                 f'--seq_len {context_length} '
                                 f'--pred_len {horizon} '
+                                f'--inverse '
                                 f'--lradj type1 '
                                 f'--random_seed {seed}')
 

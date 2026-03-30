@@ -27,12 +27,17 @@ if __name__ == '__main__':
                                 f'--is_training {args.is_training} '
                                 f'--features S '
                                 f'--enc_in 1 '
+                                f'--e_layers 4 '
+                                f'--factor 3 '
+                                f'--d_model 512 '
+                                f'--d_ff 512 '
                                 f'--embed timeF '
                                 f'--train_epochs {EPOCHS} '
                                 f'--batch_size {BATCH_SIZE} '
                                 f'--patience {PATIENCE} '
                                 f'--seq_len {context_length} '
                                 f'--pred_len {horizon} '
+                                f'--inverse '
                                 f'--random_seed {seed}')
 
                     multi_var_run_string = (f'python src/PatchTST/patchtst_supervised.py --model_id '
@@ -41,12 +46,17 @@ if __name__ == '__main__':
                                 f'--features MS '
                                 f'--enc_in 2 '
                                 f'--feature_cols TEMPERATURE '
+                                f'--e_layers 4 '
+                                f'--factor 3 '
+                                f'--d_model 512 '
+                                f'--d_ff 512 '
                                 f'--embed timeF '
                                 f'--train_epochs {EPOCHS} '
                                 f'--batch_size {BATCH_SIZE} '
                                 f'--patience {PATIENCE} '
                                 f'--seq_len {context_length} '
                                 f'--pred_len {horizon} '
+                                f'--inverse '
                                 f'--random_seed {seed}')
 
                     if args.type == 'single':

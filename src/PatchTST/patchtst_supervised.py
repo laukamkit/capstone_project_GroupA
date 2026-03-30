@@ -48,7 +48,7 @@ parser.add_argument('--seq_len', type=int, default=336, help='input sequence len
 # and the target (AKA label) used for loss calculation is [x11, x12, x13, x14, x15, x16].
 parser.add_argument('--label_len', type=int, default=48, help='start token length') 
 parser.add_argument('--pred_len', type=int, default=48, help='prediction sequence length') # for PatchTST, it is the target window length AKA forecasting horizon
-
+parser.add_argument('--inverse', action='store_true', help='inverse output data', default=False)
 
 # DLinear
 #parser.add_argument('--individual', action='store_true', default=False, help='DLinear: a linear layer for each variate(channel) individually')

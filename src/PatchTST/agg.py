@@ -5,13 +5,13 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 from matplotlib.dates import DateFormatter
 
-results_dir = Path(__file__).parent.parent / 'results'
+results_dir = Path(__file__).parent / 'results'
 
 pred_arrays = {}
 true_arrays = {}
 timestamps_arrays = {}
 metrics_arrays = {}
-results = [results_dir.rglob('pred.npy'), results_dir.rglob('true.npy'), results_dir.rglob('metrics.npy'), results_dir.rglob('ts.npy')]
+results = [results_dir.rglob('*pred.npy'), results_dir.rglob('*true.npy'), results_dir.rglob('*metrics.npy'), results_dir.rglob('*ts.npy')]
 
 for pred_npy_file, true_npy_file, metrics_npy_file, ts_npy_file in zip(*results):
     key = f'{pred_npy_file.parent.name}/{pred_npy_file.name}'

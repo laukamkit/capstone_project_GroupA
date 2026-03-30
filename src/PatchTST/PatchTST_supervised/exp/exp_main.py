@@ -268,7 +268,7 @@ class Exp_Main(Exp_Basic):
                 batch_time = batch_time[:, -self.args.pred_len:]
                 outputs = outputs.detach().cpu().numpy()
                 batch_y = batch_y.detach().cpu().numpy()
-                if test_data.scale and self.args.inverse:
+                if self.args.inverse:
                     shape = batch_y.shape
                     if self.args.features == 'MS':
                         outputs = np.tile(outputs, [1, 1, batch_y.shape[-1]])
@@ -286,12 +286,12 @@ class Exp_Main(Exp_Basic):
                 inputx.append(batch_x.detach().cpu().numpy())
                 # if i % 20 == 0:
                 #     input = batch_x.detach().cpu().numpy()
-                    # if test_data.scale and self.args.inverse:
+                    # if self.args.inverse:
                     #     shape = input.shape
                     #     input = test_data.inverse_transform(input.reshape(shape[0] * shape[1], -1)).reshape(shape)
                 #     gt = np.concatenate((input[0, :, -1], true[0, :, -1]), axis=0)
                 #     pd = np.concatenate((input[0, :, -1], pred[0, :, -1]), axis=0)
-                    #visual(gt, pd, os.path.join(folder_path, str(i) + '.pdf'))
+                    #visual(gt, pd, os.path.join(folder_path, '_' + str(i) + '.pdf'))
 
         if self.args.test_flop:
             test_params_flop((batch_x.shape[1],batch_x.shape[2]))
@@ -316,11 +316,11 @@ class Exp_Main(Exp_Basic):
         f.write('\n')
         f.close()
 
-        np.save(folder_path + 'metrics.npy', np.array([mae, mse, rmse, mape, mspe,rse, corr.mean()]))
-        np.save(folder_path + 'pred.npy', preds)
-        np.save(folder_path + 'true.npy', trues)
-        np.save(folder_path + 'ts.npy', timestamps)
-        np.save(folder_path + 'x.npy', inputx)
+        np.save(folder_path + '_metrics.npy', np.array([mae, mse, rmse, mape, mspe,rse, corr.mean()]))
+        np.save(folder_path + '_pred.npy', preds)
+        np.save(folder_path + '_true.npy', trues)
+        np.save(folder_path + '_ts.npy', timestamps)
+        np.save(folder_path + '_x.npy', inputx)
         return
 
     def predict(self, setting, load=False):
@@ -373,6 +373,6 @@ class Exp_Main(Exp_Basic):
         if not os.path.exists(folder_path):
             os.makedirs(folder_path)
 
-        np.save(folder_path + 'real_prediction.npy', preds)
+        np.save(folder_path + '_real_prediction.npy', preds)
 
         return
