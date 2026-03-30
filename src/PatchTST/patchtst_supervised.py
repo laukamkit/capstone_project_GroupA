@@ -11,6 +11,9 @@ parser = argparse.ArgumentParser(description='Autoformer & Transformer family fo
 parser.add_argument('--random_seed', type=int, default=2021, help='random seed')
 
 # basic config
+parser.add_argument('--task_name', type=str, required=False, default='long_term_forecast',
+                        help='task name, options:[long_term_forecast, short_term_forecast, imputation, classification, anomaly_detection]')
+
 parser.add_argument('--is_training', type=int, required=False, default=0, help='status')
 #parser.add_argument('--is_training', type=int, required=False, default=0, help='status')
 parser.add_argument('--model_id', type=str, required=False, default='PatchTST_h48_c336_Single_Variate', help='model id')
@@ -78,11 +81,12 @@ parser.add_argument('--factor', type=int, default=1, help='attn factor')
 parser.add_argument('--distil', action='store_false',
                     help='whether to use distilling in encoder, using this argument means not using distilling',
                     default=True)
-parser.add_argument('--dropout', type=float, default=0.05, help='dropout')
+parser.add_argument('--dropout', type=float, default=0.1, help='dropout')
 parser.add_argument('--embed', type=str, default='timeF',
                     help='time features encoding, options:[timeF, fixed, learned]')
 parser.add_argument('--activation', type=str, default='gelu', help='activation')
 parser.add_argument('--output_attention', action='store_true', help='whether to output attention in ecoder') # not used for PatchTST.
+parser.add_argument('--use_norm', type=int, default=1, help='whether to use normalize; True 1 False 0')
 parser.add_argument('--do_predict', action='store_true', help='whether to predict unseen future data')
 
 # optimization

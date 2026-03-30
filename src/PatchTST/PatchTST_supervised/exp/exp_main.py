@@ -1,6 +1,6 @@
 from PatchTST_supervised.data_provider.data_factory import data_provider
 from PatchTST_supervised.exp.exp_basic import Exp_Basic
-from PatchTST_supervised.models import PatchTST
+from PatchTST_supervised.models import PatchTST, iTransformer, TimeXer
 from PatchTST_supervised.utils.tools import EarlyStopping, adjust_learning_rate, visual, test_params_flop
 from PatchTST_supervised.utils.metrics import metric
 
@@ -26,6 +26,8 @@ class Exp_Main(Exp_Basic):
     def _build_model(self):
         model_dict = {
             'PatchTST': PatchTST,
+            'iTransformer': iTransformer,
+            'TimeXer': TimeXer
         }
         model = model_dict[self.args.model].Model(self.args).float()
 
@@ -266,6 +268,13 @@ class Exp_Main(Exp_Basic):
                 batch_time = batch_time[:, -self.args.pred_len:]
                 outputs = outputs.detach().cpu().numpy()
                 batch_y = batch_y.detach().cpu().numpy()
+                if test_data.scale and self.args.inverse:
+                    shape = batch_y.shape
+                    if self.args.features == 'MS':
+                        outputs = np.tile(outputs, [1, 1, batch_y.shape[-1]])
+                    outputs = test_data.inverse_transform(outputs.reshape(shape[0] * shape[1], -1)).reshape(shape)
+                    batch_y = test_data.inverse_transform(batch_y.reshape(shape[0] * shape[1], -1)).reshape(shape)
+        
                 batch_time = batch_time.detach().cpu().numpy()
                 pred = outputs  # outputs.detach().cpu().numpy()  # .squeeze()
                 true = batch_y  # batch_y.detach().cpu().numpy()  # .squeeze()
@@ -277,6 +286,9 @@ class Exp_Main(Exp_Basic):
                 inputx.append(batch_x.detach().cpu().numpy())
                 # if i % 20 == 0:
                 #     input = batch_x.detach().cpu().numpy()
+                    # if test_data.scale and self.args.inverse:
+                    #     shape = input.shape
+                    #     input = test_data.inverse_transform(input.reshape(shape[0] * shape[1], -1)).reshape(shape)
                 #     gt = np.concatenate((input[0, :, -1], true[0, :, -1]), axis=0)
                 #     pd = np.concatenate((input[0, :, -1], pred[0, :, -1]), axis=0)
                     #visual(gt, pd, os.path.join(folder_path, str(i) + '.pdf'))
