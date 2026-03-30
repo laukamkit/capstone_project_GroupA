@@ -5,6 +5,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='PatchTST Runs for Single-Variable and Multi-Variable Time Series Forecasting')
     parser.add_argument('--type', type=str, default='single', help='type of experiment: single or multi')
     parser.add_argument('--is_training', type=int, default=1, help='whether to train the model: 1 for training, 0 for testing')
+    parser.add_argument('--model_id', type=str, required=False, default='UNK', help='model id')
     args = parser.parse_args()
 
     HORIZONS = [48, 336, 720]#[48, 96, 168, 336, 720]
