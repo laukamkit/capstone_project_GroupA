@@ -189,17 +189,19 @@ class NSWDataLoader:
             n = len(df_model)
             train_size = int(n * self.train_size)
             val_size = int(n * self.val_size)
-            train       = df_model[base_features].iloc[:train_size]
-            validation  = df_model[base_features].iloc[train_size:train_size + val_size]
-            test        = df_model[base_features].iloc[train_size + val_size:]
+            train       = df_model.iloc[:train_size]
+            validation  = df_model.iloc[train_size:train_size + val_size]
+            test        = df_model.iloc[train_size + val_size:]
             scaler = StandardScaler()
-            train_scaled = scaler.fit_transform(train[base_features])
-            val_scaled = scaler.transform(validation[base_features])
-            test_scaled = scaler.transform(test[base_features])
-            train_scaled = pd.DataFrame(train_scaled, columns=base_features, index=train.index)
-            val_scaled = pd.DataFrame(val_scaled, columns=base_features, index=validation.index)
-            test_scaled = pd.DataFrame(test_scaled, columns=base_features, index=test.index)
-            return train, validation, test, train_scaled, val_scaled, test_scaled
+            train_scaled = scaler.fit_transform(train)
+            val_scaled = scaler.transform(validation)
+            test_scaled = scaler.transform(test)
+            train_scaled = pd.DataFrame(train_scaled, columns=train.columns, index=train.index)
+            val_scaled = pd.DataFrame(val_scaled, columns=validation.columns, index=validation.index)
+            test_scaled = pd.DataFrame(test_scaled, columns=test.columns, index=test.index)
+            
+            # we keep all columns in test for later comparison with forecasted demand
+            return train[base_features], validation[base_features], test, train_scaled[base_features], val_scaled[base_features], test_scaled[base_features]
 
         part_a = os.path.join(self.nsw_path, "forecastdemand_nsw.csv.zip.partaa")
         part_b = os.path.join(self.nsw_path, "forecastdemand_nsw.csv.zip.partab")
