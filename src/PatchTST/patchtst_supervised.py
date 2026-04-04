@@ -30,7 +30,7 @@ parser.add_argument('--test_data_path', type=str, default='test.csv', help='data
 parser.add_argument('--features', type=str, default='S',
                     help='forecasting task, options:[M, S, MS]; M:multivariate predict multivariate, S:univariate predict univariate, MS:multivariate predict univariate')
 parser.add_argument('--target', type=str, default='TOTALDEMAND', help='target feature in S or MS task')
-parser.add_argument('--feature_cols', default=[], nargs='*', help='input features')
+parser.add_argument('--feature_cols', default=[], nargs='*', help='input features delimited by space, e.g. --feature_cols TEMPERATURE demand_1_day_ago demand_1_week_ago demand_1_year_ago TEMPERATURE TEMP_SQUARED HOUR DAYOFWEEK IS_WEEKEND rolling_mean_6 rolling_mean_1_day rolling_mean_1_week rolling_mean_1_year')
 parser.add_argument('--date_col', type=str, default='DATETIME', help='date features')
 parser.add_argument('--freq', type=str, default='30min', # change to 30min once Kam changes the data.
                     help='freq for time features encoding, options:[s:secondly, t:minutely, h:hourly, d:daily, b:business days, w:weekly, m:monthly], you can also use more detailed freq like 15min or 3h')

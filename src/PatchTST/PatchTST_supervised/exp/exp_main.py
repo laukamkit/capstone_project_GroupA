@@ -332,7 +332,10 @@ class Exp_Main(Exp_Basic):
             print('Inverse Metrics - mse:{}, mae:{}, rmse:{}, rse:{}\n'.format(mse_inverse, mae_inverse, rmse_inverse, rse_inverse))
             
         print('mse:{}, mae:{}, rmse:{}, rse:{}'.format(mse, mae, rmse, rse))
-        f = open("src/PatchTST/results/result.txt", 'a')
+        # create results folder if it does not exist
+        if not os.path.exists(self.args.results):
+            os.makedirs(self.args.results)
+        f = open(os.path.join(self.args.results, "result.txt"), 'a')
         f.write(setting + "  \n")
         if self.args.inverse:
             f.write('mse:{}, mae:{}, rse:{}, mse_inverse:{}, rmse_inverse:{}, mae_inverse:{}, rse_inverse:{}'.format(mse, mae, rse, mse_inverse, rmse_inverse, mae_inverse, rse_inverse))

@@ -3,14 +3,15 @@ from pathlib import Path
 import pandas as pd
 import numpy as np
 from sklearn.preprocessing import StandardScaler
+from torch.utils.data import Dataset, DataLoader
 
 class NSWDataLoader:
     def __init__(self, train_size: float = 0.6, val_size: float = 0.2):
-        self.nsw_path = self._get_repo_path()
+        self._set_repo_path()
         self.train_size = train_size
         self.val_size = val_size
 
-    def _get_repo_path(self) -> str:
+    def _set_repo_path(self) -> None:
         # try different approaches to get the repo path.
         # based on all our individual modelling notebooks.
         possible_paths = [
@@ -21,16 +22,28 @@ class NSWDataLoader:
         for path in possible_paths:
             if os.path.exists(path):
                 print(f'Found NSW data path: {path}')
-                return path
+                self.nsw_path = path
+                self.output_dir = os.path.join(self.nsw_path, "..", ".." ,"results")
+                os.makedirs(self.output_dir, exist_ok=True)
+                return
         raise FileNotFoundError("NSW data path not found.")
 
+    # todo: return scaler as well for inverse transform later
     def load_data(self) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
         """Loads the NSW dataset from CSV files. If the processed CSV files do not exist, it extracts and processes the raw data from zip files.
         Returns:
             A tuple containing six pandas DataFrames: train, validation, test, train_scaled, val_scaled, test_scaled.
         """
-        if not os.path.exists(os.path.join(self.nsw_path, "train.csv")):
-            self.extract_data_from_zip()
+        for _ in range(3): # try 3 times to extract data if files are not found (to handle potential
+            if not os.path.exists(os.path.join(self.nsw_path, "train.csv")) \
+                or not os.path.exists(os.path.join(self.nsw_path, "validation.csv")) \
+                or not os.path.exists(os.path.join(self.nsw_path, "test.csv")) \
+                or not os.path.exists(os.path.join(self.nsw_path, "train_scaled.csv")) \
+                or not os.path.exists(os.path.join(self.nsw_path, "val_scaled.csv")) \
+                or not os.path.exists(os.path.join(self.nsw_path, "test_scaled.csv")):
+                self.extract_data_from_zip()
+            else:
+                break
         train = pd.read_csv(os.path.join(self.nsw_path, "train.csv"), index_col=0, parse_dates=True)
         validation = pd.read_csv(os.path.join(self.nsw_path, "validation.csv"), index_col=0, parse_dates=True)
         test = pd.read_csv(os.path.join(self.nsw_path, "test.csv"), index_col=0, parse_dates=True)
@@ -51,6 +64,7 @@ class NSWDataLoader:
         8. Splits the final dataset into train, validation, and test sets based on the specified proportions.
         9. Saves the processed datasets to CSV files for later use.
         """
+        HORIZONS = [48, 96, 168, 336, 720]
         def _compute_merged_se(df_merged: pd.DataFrame) -> pd.DataFrame:
             p_cols = [f"P{i:02d}" for i in range(1, 49)]
             # Compute squared errors
@@ -175,13 +189,44 @@ class NSWDataLoader:
             return df_demand, df_temp, df_forecast
 
         def _add_lag_features(df_merged: pd.DataFrame) -> pd.DataFrame:
-            df_merged["demand_1_day_ago"] = df_merged["TOTALDEMAND"].shift(24)
-            df_merged["demand_1_week_ago"] = df_merged["TOTALDEMAND"].shift(168)
-            df_merged["demand_1_year_ago"] = df_merged["TOTALDEMAND"].shift(8760)
+            df_merged["demand_1_day_ago"] = df_merged["TOTALDEMAND"].shift(48)
+            df_merged["demand_1_week_ago"] = df_merged["TOTALDEMAND"].shift(48 * 7)
+            df_merged["demand_1_year_ago"] = df_merged["TOTALDEMAND"].shift(48 * 365)
+            df_merged["target_demand_1_year_ago_h_48"] = df_merged["TOTALDEMAND"].shift(48 * 365 - HORIZONS[0])
+            df_merged["target_demand_1_year_ago_h_96"] = df_merged["TOTALDEMAND"].shift(48 * 365 - HORIZONS[1])
+            df_merged["target_demand_1_year_ago_h_168"] = df_merged["TOTALDEMAND"].shift(48 * 365 - HORIZONS[2])
+            df_merged["target_demand_1_year_ago_h_336"] = df_merged["TOTALDEMAND"].shift(48 * 365 - HORIZONS[3])
+            df_merged["target_demand_1_year_ago_h_720"] = df_merged["TOTALDEMAND"].shift(48 * 365 - HORIZONS[4])
+
+
+            df_merged['TEMP_SQUARED'] = df_merged['TEMPERATURE'] ** 2
+            df_merged['HOUR'] = df_merged.index.hour
+            df_merged['DAYOFWEEK'] = df_merged.index.dayofweek
+            df_merged['IS_WEEKEND'] = (df_merged['DAYOFWEEK'] >= 5).astype(int)
+
+            # Rolling Averages
+            df_merged['rolling_mean_6'] = df_merged['TOTALDEMAND'].shift(1).rolling(6).mean()
+            df_merged['rolling_mean_1_day'] = df_merged['TOTALDEMAND'].shift(1).rolling(48).mean()
+            df_merged['rolling_mean_1_week'] = df_merged['TOTALDEMAND'].shift(1).rolling(48 * 7).mean()
+            df_merged['rolling_mean_1_year'] = df_merged['TOTALDEMAND'].shift(1).rolling(48 * 365).mean()
+
             df_model = df_merged.dropna(subset=[
                 "demand_1_day_ago",
                 "demand_1_week_ago",
-                "demand_1_year_ago"
+                "demand_1_year_ago",
+                'TEMP_SQUARED',
+                'HOUR',
+                'DAYOFWEEK',
+                'IS_WEEKEND',
+                'rolling_mean_6',
+                'rolling_mean_1_day',
+                'rolling_mean_1_week',
+                'rolling_mean_1_year',
+                'target_demand_1_year_ago_h_48',
+                'target_demand_1_year_ago_h_96',
+                'target_demand_1_year_ago_h_168',
+                'target_demand_1_year_ago_h_336',
+                'target_demand_1_year_ago_h_720'
             ])
             return df_model
         
@@ -230,8 +275,21 @@ class NSWDataLoader:
                     "demand_1_week_ago",
                     "demand_1_year_ago",
                     "TEMPERATURE",
+                    'TEMP_SQUARED',
+                    'HOUR',
+                    'DAYOFWEEK',
+                    'IS_WEEKEND',
+                    'rolling_mean_6',
+                    'rolling_mean_1_day',
+                    'rolling_mean_1_week',
+                    'rolling_mean_1_year',
                     "RMSE_48",
-                    "TSE_48"]
+                    "TSE_48",
+                    "target_demand_1_year_ago_h_48",
+                    "target_demand_1_year_ago_h_96",
+                    "target_demand_1_year_ago_h_168",
+                    "target_demand_1_year_ago_h_336",
+                    "target_demand_1_year_ago_h_720"]
         train, validation, test, train_scaled, val_scaled, test_scaled = _train_val_test_split(df_model, base_features)
         # Create folder if it does not exist
         os.makedirs(self.nsw_path, exist_ok=True)
@@ -259,5 +317,5 @@ class NSWDataLoader:
 
 
 if __name__ == "__main__":
-    data_loader = NSWDataLoader()
-    train, validation, test, train_scaled, val_scaled, test_scaled = data_loader.load_data()
+    nsw_data_loader = NSWDataLoader()
+    train, validation, test, train_scaled, val_scaled, test_scaled = nsw_data_loader.load_data()
