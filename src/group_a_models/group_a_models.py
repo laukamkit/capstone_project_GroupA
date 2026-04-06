@@ -1,32 +1,15 @@
-from nsw_data_loader import NSWDataLoader
-from nsw_dataset import WindowedNSWDataSet
-from statsmodels.tsa.statespace.sarimax import SARIMAX, SARIMAXResults, SARIMAXResultsWrapper
+from model_configs import SARIMAXConfig
+from Base_Model import Base_Model
+from statsmodels.tsa.statespace.sarimax import SARIMAX, SARIMAXResultsWrapper
 import pandas as pd
 import numpy as np
 from sklearn.metrics import mean_squared_error, mean_absolute_error
-from model_configs import *
 import os
-from datetime import datetime
 from time import time
 from copy import deepcopy
 
-class GroupAModels:
-    def __init__(self, config: Config):
-        self.config: Config = config
-        self.nsw_data_loader = NSWDataLoader()
-        self.train, self.validation, self.test, self.train_scaled, self.val_scaled, self.test_scaled = self.nsw_data_loader.load_data()
 
-    def train_model(self):
-        raise NotImplementedError
-    
-    def test_model(self):
-        raise NotImplementedError
-    
-    def data_loader(self):
-        raise NotImplementedError
-            
-
-class SarimaxModel(GroupAModels):
+class SarimaxModel(Base_Model):
     def __init__(self, config: SARIMAXConfig):
         self.p = config.p
         self.d = config.d
@@ -137,7 +120,6 @@ class SarimaxModel(GroupAModels):
             print(f"Saved detailed rolling forecast results to sarimax_results/test_results_{self.config.task_id}.csv")
         return all_origins, all_timestamps, all_actuals, all_predictions, mae, rmse, mse
         
-
     def train_model(self):
         # only use the most recent 'lookback_window' data points for training, if lookback_window is specified in the config
         self.training_data = self.training_data.iloc[-self.config.lookback_window:] if self.config.lookback_window else self.training_data
@@ -145,7 +127,6 @@ class SarimaxModel(GroupAModels):
         best_val_mse = np.inf
         best_order = None
         best_seasonal_order = None
-        best_model = None
         progress_log = {
             'model_name': [],
             'order': [],
@@ -178,7 +159,7 @@ class SarimaxModel(GroupAModels):
                                     end = time()
                                     print(f"\tFitted SARIMAX({p},{d},{q})({p_s},{d_s},{q_s},{self.seasonality_period}) - Training AIC: {model_fit.aic:.2f} | Time taken: {end - start:.2f} seconds\n")
                                     try:
-                                        print(f"\tValidating SARIMAX({p},{d},{q})({p_s},{d_s},{q_s},{self.seasonality_period}) on horizon {self.config.forecast_horizon} with {self.config.val_step_size} iterations...")
+                                        print(f"\tValidating SARIMAX({p},{d},{q})({p_s},{d_s},{q_s},{self.seasonality_period}) on horizon {self.config.forecast_horizon} with step size {self.config.val_step_size}...")
                                         _, _, _, _, mae, rmse, mse = self.test_model(model_fit)
                                         if mse < best_val_mse:
                                             print(f"New best model found: order ({p},{d},{q}) | seasonal_order ({p_s},{d_s},{q_s},{self.seasonality_period}) - RMSE: {rmse:.2f}")
@@ -187,7 +168,7 @@ class SarimaxModel(GroupAModels):
                                             best_seasonal_order = (p_s,d_s,q_s,self.seasonality_period)
                                             best_model = model_fit
                                             best_training_aic = model_fit.aic
-                                            progress_log['model_name'].append(self.task_id)
+                                            progress_log['model_name'].append(self.config.task_id)
                                             progress_log['order'].append(best_order)
                                             progress_log['seasonal_order'].append(best_seasonal_order)
                                             progress_log['validation_horizon'].append(self.config.forecast_horizon)
@@ -199,9 +180,18 @@ class SarimaxModel(GroupAModels):
                                             progress_log['time_taken_seconds'].append(end - start)
                                     except Exception as e:
                                         print(e)
-                                        print(f"\tError validating SARIMAX({p},{d},{q})({p_s},{d_s},{q_s},{self.seasonality_period}) on horizon {self.config.forecast_horizon} with {self.config.val_step_size} iterations: {e}")
-        
+                                        print(f"\tError validating SARIMAX({p},{d},{q})({p_s},{d_s},{q_s},{self.seasonality_period}) on horizon {self.config.forecast_horizon} with step size {self.config.val_step_size}: {e}")
         print(f"Best SARIMAX{best_order}{best_seasonal_order} - AIC: {best_training_aic:.2f} | Validation MSE: {best_val_mse:.2f} | Validation RMSE: {np.sqrt(best_val_mse):.2f} | Time taken: {progress_log['time_taken_seconds'][-1]:.2f} seconds")
+        print("\nNow fitting the best model with both training and validation data with lookback_window applied...")
+        train_val_data = pd.concat([self.training_data, self.validation_data])
+        best_model = SARIMAX(
+            endog=train_val_data[self.config.target_col],
+            exog=train_val_data[self.config.feature_cols] if self.config.feature_cols else None,
+            order=best_order,
+            seasonal_order=best_seasonal_order,
+            enforce_stationarity=self.enforce_stationarity,
+            enforce_invertibility=self.enforce_invertibility
+        ).fit(disp=False, warn_convergence=False)
         self.best_model = best_model
         self.best_order = best_order
         self.best_seasonal_order = best_seasonal_order
@@ -210,6 +200,7 @@ class SarimaxModel(GroupAModels):
         fitting_progress_log_df.to_csv(os.path.join(self.nsw_data_loader.output_dir, "sarimax_results", f"fitting_log_{self.config.task_id}.csv"), index=False)
         os.makedirs(os.path.join(self.nsw_data_loader.output_dir, "sarimax_models"), exist_ok=True)
         self.best_model.save(os.path.join(self.nsw_data_loader.output_dir, "sarimax_models", f"model_{self.config.task_id}.pkl"))
+        print("Training complete. Saved best model and fitting progress log.")
       
         
 if __name__ == "__main__":
@@ -222,7 +213,7 @@ if __name__ == "__main__":
         log_transform_target=True,
         feature_cols=['demand_1_week_ago', 'demand_1_year_ago', 'TEMPERATURE','TEMP_SQUARED', 'IS_WEEKEND'],
         scale=False,
-        p=[2, 4],
+        p=[2, 3, 4],
         d=[0],
         q=[0],
         P=[1],
@@ -234,5 +225,5 @@ if __name__ == "__main__":
     )
     sarimax_model = SarimaxModel(sarimax_config)
     sarimax_model.train_model()
-    all_origins, all_timestamps, all_actuals, all_predictions, mae, rmse, mse = sarimax_model.test_model(None, sarimax_model.test_scaled if sarimax_model.config.scale else sarimax_model.test)
+    all_origins, all_timestamps, all_actuals, all_predictions, mae, rmse, mse = sarimax_model.test_model(None, test_mode=True)
     pass
