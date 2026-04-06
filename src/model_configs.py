@@ -9,9 +9,8 @@ class Config:
     lookback_window: int | None = None
     date_col: str = 'DATETIME'
     target_col: str = 'TOTALDEMAND'
+    log_transform_target: bool = False
     feature_cols: list[str] = field(default_factory=list)
-    is_training: bool = True
-    time_freq: str = '30min'
     scale: bool = True # if scale, then make sure to set inverse to True as well
     seed: int | None = None
 
@@ -35,11 +34,17 @@ class PatchTSTConfig(Config):
 
 @dataclass(kw_only=True)
 class SARIMAXConfig(Config):
-    order: tuple[int, int, int]
-    seasonal_order: tuple[int, int, int, int]
+    # If any of the number of elements in these lists is greater than 1, then grid search will be performed
+    p: list[int] = field(default_factory=list)
+    d: list[int] = field(default_factory=list)
+    q: list[int] = field(default_factory=list)
+    P: list[int] = field(default_factory=list)
+    D: list[int] = field(default_factory=list)
+    Q: list[int] = field(default_factory=list)
+    seasonality_period: int
     enforce_stationarity: bool
     enforce_invertibility: bool
-    val_iter: int = 20
+    val_step_size: int = 48 # every 1 day
 
 @dataclass(kw_only=True)
 class LSTMConfig(Config):
