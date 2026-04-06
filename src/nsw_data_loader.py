@@ -45,11 +45,17 @@ class NSWDataLoader:
             else:
                 break
         train = pd.read_csv(os.path.join(self.nsw_path, "train.csv"), index_col=0, parse_dates=True)
+        train.index.freq = '30min'
         validation = pd.read_csv(os.path.join(self.nsw_path, "validation.csv"), index_col=0, parse_dates=True)
+        validation.index.freq = '30min'
         test = pd.read_csv(os.path.join(self.nsw_path, "test.csv"), index_col=0, parse_dates=True)
+        test.index.freq = '30min'
         train_scaled = pd.read_csv(os.path.join(self.nsw_path, "train_scaled.csv"), index_col=0, parse_dates=True)
+        train_scaled.index.freq = '30min'
         val_scaled = pd.read_csv(os.path.join(self.nsw_path, "val_scaled.csv"), index_col=0, parse_dates=True)
+        val_scaled.index.freq = '30min'
         test_scaled = pd.read_csv(os.path.join(self.nsw_path, "test_scaled.csv"), index_col=0, parse_dates=True)
+        test_scaled.index.freq = '30min'
         return train, validation, test, train_scaled, val_scaled, test_scaled
 
     def extract_data_from_zip(self) -> None:
@@ -64,7 +70,18 @@ class NSWDataLoader:
         8. Splits the final dataset into train, validation, and test sets based on the specified proportions.
         9. Saves the processed datasets to CSV files for later use.
         """
-        HORIZONS = [48, 96, 168, 336, 720]
+        BASE_FEATURES = [
+                "TOTALDEMAND",
+                "TEMPERATURE",
+                "demand_1_day_ago",
+                "demand_1_week_ago",
+                "demand_1_year_ago",
+                'TEMP_SQUARED',
+                'HOUR',
+                'DAYOFWEEK',
+                'IS_WEEKEND',
+                'IS_ABOVE_35_DEGREES'
+            ]
         def _compute_merged_se(df_merged: pd.DataFrame) -> pd.DataFrame:
             p_cols = [f"P{i:02d}" for i in range(1, 49)]
             # Compute squared errors
@@ -192,42 +209,14 @@ class NSWDataLoader:
             df_merged["demand_1_day_ago"] = df_merged["TOTALDEMAND"].shift(48)
             df_merged["demand_1_week_ago"] = df_merged["TOTALDEMAND"].shift(48 * 7)
             df_merged["demand_1_year_ago"] = df_merged["TOTALDEMAND"].shift(48 * 365)
-            df_merged["target_demand_1_year_ago_h_48"] = df_merged["TOTALDEMAND"].shift(48 * 365 - HORIZONS[0])
-            df_merged["target_demand_1_year_ago_h_96"] = df_merged["TOTALDEMAND"].shift(48 * 365 - HORIZONS[1])
-            df_merged["target_demand_1_year_ago_h_168"] = df_merged["TOTALDEMAND"].shift(48 * 365 - HORIZONS[2])
-            df_merged["target_demand_1_year_ago_h_336"] = df_merged["TOTALDEMAND"].shift(48 * 365 - HORIZONS[3])
-            df_merged["target_demand_1_year_ago_h_720"] = df_merged["TOTALDEMAND"].shift(48 * 365 - HORIZONS[4])
-
 
             df_merged['TEMP_SQUARED'] = df_merged['TEMPERATURE'] ** 2
             df_merged['HOUR'] = df_merged.index.hour
             df_merged['DAYOFWEEK'] = df_merged.index.dayofweek
             df_merged['IS_WEEKEND'] = (df_merged['DAYOFWEEK'] >= 5).astype(int)
+            df_merged['IS_ABOVE_35_DEGREES'] = (df_merged['TEMPERATURE'] > 35).astype(int)
 
-            # Rolling Averages
-            df_merged['rolling_mean_6'] = df_merged['TOTALDEMAND'].shift(1).rolling(6).mean()
-            df_merged['rolling_mean_1_day'] = df_merged['TOTALDEMAND'].shift(1).rolling(48).mean()
-            df_merged['rolling_mean_1_week'] = df_merged['TOTALDEMAND'].shift(1).rolling(48 * 7).mean()
-            df_merged['rolling_mean_1_year'] = df_merged['TOTALDEMAND'].shift(1).rolling(48 * 365).mean()
-
-            df_model = df_merged.dropna(subset=[
-                "demand_1_day_ago",
-                "demand_1_week_ago",
-                "demand_1_year_ago",
-                'TEMP_SQUARED',
-                'HOUR',
-                'DAYOFWEEK',
-                'IS_WEEKEND',
-                'rolling_mean_6',
-                'rolling_mean_1_day',
-                'rolling_mean_1_week',
-                'rolling_mean_1_year',
-                'target_demand_1_year_ago_h_48',
-                'target_demand_1_year_ago_h_96',
-                'target_demand_1_year_ago_h_168',
-                'target_demand_1_year_ago_h_336',
-                'target_demand_1_year_ago_h_720'
-            ])
+            df_model = df_merged.dropna(subset=BASE_FEATURES)
             return df_model
         
         def _train_val_test_split(df_model: pd.DataFrame, base_features: list[str]) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
@@ -270,26 +259,7 @@ class NSWDataLoader:
         df_model = _add_lag_features(df_merged)
 
         n = len(df_model)
-        base_features = ["TOTALDEMAND",
-                    "demand_1_day_ago",
-                    "demand_1_week_ago",
-                    "demand_1_year_ago",
-                    "TEMPERATURE",
-                    'TEMP_SQUARED',
-                    'HOUR',
-                    'DAYOFWEEK',
-                    'IS_WEEKEND',
-                    'rolling_mean_6',
-                    'rolling_mean_1_day',
-                    'rolling_mean_1_week',
-                    'rolling_mean_1_year',
-                    "RMSE_48",
-                    "TSE_48",
-                    "target_demand_1_year_ago_h_48",
-                    "target_demand_1_year_ago_h_96",
-                    "target_demand_1_year_ago_h_168",
-                    "target_demand_1_year_ago_h_336",
-                    "target_demand_1_year_ago_h_720"]
+        base_features = BASE_FEATURES + ["RMSE_48", "TSE_48"]
         train, validation, test, train_scaled, val_scaled, test_scaled = _train_val_test_split(df_model, base_features)
         # Create folder if it does not exist
         os.makedirs(self.nsw_path, exist_ok=True)
