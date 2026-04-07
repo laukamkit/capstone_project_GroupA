@@ -15,3 +15,16 @@ class Base_Model:
     
     def test_model(self):
         raise NotImplementedError
+    
+    # @classmethod
+    # def plot_predictions(cls, y_true_real, y_pred_real, n_points=500, title="Forecast vs Actual"):
+    #     plt.figure(figsize=(12, 5))
+    #     plt.plot(y_true_real[:n_points], label="Actual")
+    #     plt.plot(y_pred_real[:n_points], label="Predicted")
+    #     plt.xlabel("Test Sample")
+    #     plt.ylabel("Demand")
+    #     plt.title(title)
+    #     plt.legend()
+    #     plt.grid(True, alpha=0.3)
+    #     plt.tight_layout()
+    #     plt.show()

@@ -105,6 +105,7 @@ class NSWDataLoader:
         9. Saves the processed datasets to CSV files for later use.
         """
         BASE_FEATURES = [
+                "LOG_TOTALDEMAND",
                 "TOTALDEMAND",
                 "TEMPERATURE",
                 "demand_1_day_ago",
@@ -239,7 +240,7 @@ class NSWDataLoader:
             df_forecast["TARGET_DATETIME"] = df_forecast["TARGET_DATETIME"].dt.floor("30min")
             return df_demand, df_temp, df_forecast
 
-        def _add_lag_features(df_merged: pd.DataFrame) -> pd.DataFrame:
+        def _add_features(df_merged: pd.DataFrame) -> pd.DataFrame:
             df_merged["demand_1_day_ago"] = df_merged["TOTALDEMAND"].shift(48)
             df_merged["demand_1_week_ago"] = df_merged["TOTALDEMAND"].shift(48 * 7)
             df_merged["demand_1_year_ago"] = df_merged["TOTALDEMAND"].shift(48 * 365)
@@ -250,7 +251,10 @@ class NSWDataLoader:
             df_merged['IS_WEEKEND'] = (df_merged['DAYOFWEEK'] >= 5).astype(int)
             df_merged['IS_ABOVE_35_DEGREES'] = (df_merged['TEMPERATURE'] > 35).astype(int)
 
+            df_merged['LOG_TOTALDEMAND'] = np.log(df_merged['TOTALDEMAND'])
             df_model = df_merged.dropna(subset=BASE_FEATURES)
+            non_forecast_cols = BASE_FEATURES + ["RMSE_48", "TSE_48"]
+            df_model = df_model[BASE_FEATURES + df_model.columns.difference(non_forecast_cols).tolist() + ["RMSE_48", "TSE_48"]]
             return df_model
         
         def _train_val_test_split(df_model: pd.DataFrame, base_features: list[str]) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
@@ -290,7 +294,7 @@ class NSWDataLoader:
         df_merged = _merge_datasets(df_demand, df_temp, df_forecast)
         df_merged = _clean_merged(df_merged)
         df_merged = _compute_merged_se(df_merged)
-        df_model = _add_lag_features(df_merged)
+        df_model = _add_features(df_merged)
 
         n = len(df_model)
         base_features = BASE_FEATURES + ["RMSE_48", "TSE_48"]

@@ -8,7 +8,7 @@ class Config:
     forecast_horizon: int
     lookback_window: int | None = None
     target_col: str = 'TOTALDEMAND'
-    log_transform_target: bool = False
+    used_log_target: bool = False
     feature_cols: list[str] = field(default_factory=list)
     scale: bool = True # if scale, then make sure to set inverse to True as well
     seed: int | None = None
