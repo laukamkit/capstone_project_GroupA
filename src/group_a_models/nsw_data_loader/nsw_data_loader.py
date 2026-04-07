@@ -1,9 +1,13 @@
+import pickle
 import os
 from pathlib import Path
+import pickle
 import pandas as pd
 import numpy as np
 from sklearn.preprocessing import StandardScaler
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import DataLoader
+from nsw_data_loader.nsw_data_set import NSWDataSet
+from model_configs import Config, TransformersConfig
 
 class NSWDataLoader:
     def __init__(self, train_size: float = 0.6, val_size: float = 0.2):
@@ -28,7 +32,6 @@ class NSWDataLoader:
                 return
         raise FileNotFoundError("NSW data path not found.")
 
-    # todo: return scaler as well for inverse transform later
     def load_data(self) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
         """Loads the NSW dataset from CSV files. If the processed CSV files do not exist, it extracts and processes the raw data from zip files.
         Returns:
@@ -40,7 +43,8 @@ class NSWDataLoader:
                 or not os.path.exists(os.path.join(self.nsw_path, "test.csv")) \
                 or not os.path.exists(os.path.join(self.nsw_path, "train_scaled.csv")) \
                 or not os.path.exists(os.path.join(self.nsw_path, "val_scaled.csv")) \
-                or not os.path.exists(os.path.join(self.nsw_path, "test_scaled.csv")):
+                or not os.path.exists(os.path.join(self.nsw_path, "test_scaled.csv")) \
+                or not os.path.exists(os.path.join(self.nsw_path, "scaler.pkl")):
                 self.extract_data_from_zip()
             else:
                 break
@@ -56,8 +60,38 @@ class NSWDataLoader:
         val_scaled.index.freq = '30min'
         test_scaled = pd.read_csv(os.path.join(self.nsw_path, "test_scaled.csv"), index_col=0, parse_dates=True)
         test_scaled.index.freq = '30min'
-        return train, validation, test, train_scaled, val_scaled, test_scaled
-
+        scaler = pickle.load(open(os.path.join(self.nsw_path, "scaler.pkl"), 'rb'))
+        self.train = train
+        self.validation = validation
+        self.test = test
+        self.train_scaled = train_scaled
+        self.val_scaled = val_scaled
+        self.test_scaled = test_scaled
+        self.scaler = scaler
+        return train, validation, test, train_scaled, val_scaled, test_scaled, scaler
+    
+    @classmethod
+    def data_provider(cls, train_df, val_df, test_df, config:TransformersConfig, flag):
+        if flag == 'test':
+            shuffle_flag = False
+        else:
+            shuffle_flag = True
+        data_set = NSWDataSet(
+            config=config,
+            train_df=train_df,
+            val_df=val_df,
+            test_df=test_df,
+            flag=flag
+        )
+        print(flag, len(data_set))
+        data_loader = DataLoader(
+            data_set,
+            batch_size=config.batch_size,
+            shuffle=shuffle_flag,
+            num_workers=config.num_workers,
+            drop_last=True)
+        return data_set, data_loader
+    
     def extract_data_from_zip(self) -> None:
         """This function performs the following steps:
         1. Reads the raw CSV files (demand, temperature, forecast) from the provided zip files.
@@ -235,7 +269,7 @@ class NSWDataLoader:
             test_scaled = pd.DataFrame(test_scaled, columns=test.columns, index=test.index)
             
             # we keep all columns in test for later comparison with forecasted demand
-            return train[base_features], validation[base_features], test, train_scaled[base_features], val_scaled[base_features], test_scaled[base_features]
+            return train[base_features], validation[base_features], test, train_scaled[base_features], val_scaled[base_features], test_scaled[base_features], scaler
 
         part_a = os.path.join(self.nsw_path, "forecastdemand_nsw.csv.zip.partaa")
         part_b = os.path.join(self.nsw_path, "forecastdemand_nsw.csv.zip.partab")
@@ -260,7 +294,7 @@ class NSWDataLoader:
 
         n = len(df_model)
         base_features = BASE_FEATURES + ["RMSE_48", "TSE_48"]
-        train, validation, test, train_scaled, val_scaled, test_scaled = _train_val_test_split(df_model, base_features)
+        train, validation, test, train_scaled, val_scaled, test_scaled, scaler = _train_val_test_split(df_model, base_features)
         # Create folder if it does not exist
         os.makedirs(self.nsw_path, exist_ok=True)
 
@@ -277,6 +311,11 @@ class NSWDataLoader:
         val_scaled.to_csv(os.path.join(self.nsw_path, "val_scaled.csv"))
         test_scaled.to_csv(os.path.join(self.nsw_path, "test_scaled.csv"))
 
+        # Save the scaler for later inverse transformation
+        scaler_path = os.path.join(self.nsw_path, "scaler.pkl")
+        with open(scaler_path, "wb") as f:
+            pickle.dump(scaler, f)
+
         # Display confirmation
         print("Saved files to:", self.nsw_path)
         print(os.listdir(self.nsw_path))
@@ -288,4 +327,4 @@ class NSWDataLoader:
 
 if __name__ == "__main__":
     nsw_data_loader = NSWDataLoader()
-    train, validation, test, train_scaled, val_scaled, test_scaled = nsw_data_loader.load_data()
+    train, validation, test, train_scaled, val_scaled, test_scaled, scaler = nsw_data_loader.load_data()

@@ -21,16 +21,16 @@ class Model(nn.Module):
         
         # load parameters
         c_in = configs.enc_in
-        context_window = configs.seq_len
-        target_window = configs.pred_len
+        context_window = configs.lookback_window
+        target_window = configs.forecast_horizon
         
-        n_layers = configs.e_layers
-        n_heads = configs.n_heads
+        n_layers = configs.num_encoder_layers
+        n_heads = configs.num_attention_heads
         d_model = configs.d_model
-        d_ff = configs.d_ff
+        d_ff = configs.dim_ff
         dropout = configs.dropout
-        fc_dropout = configs.fc_dropout
-        head_dropout = configs.head_dropout
+        fc_dropout = configs.dropout_ff
+        head_dropout = configs.dropout_head_fc
         
         individual = configs.individual
     
