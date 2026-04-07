@@ -1,6 +1,4 @@
 import torch
-import random
-
 from PatchTST_supervised.models import PatchTST, TimeXer
 from PatchTST_supervised.models import iTransformer
 from PatchTST_supervised.utils.tools import EarlyStopping, adjust_learning_rate, test_params_flop
@@ -33,11 +31,6 @@ class PatchTSTModel(Base_Model):
         self.dropout_head_fc = config.dropout_head_fc
         super().__init__(config)
         self.config: TransformersConfig = config
-        if self.config.seed is not None:
-            random.seed(self.config.seed)
-            torch.manual_seed(self.config.seed)
-            np.random.seed(self.config.seed)
-            torch.cuda.manual_seed_all(self.config.seed)
         self.device = self._acquire_device()
         self.model = self._build_model().to(self.device)
 

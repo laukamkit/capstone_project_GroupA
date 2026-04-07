@@ -1,3 +1,6 @@
+import torch
+import random
+import numpy as np
 from nsw_data_loader.nsw_data_loader import NSWDataLoader
 from model_configs import Config
 
@@ -9,6 +12,11 @@ class Base_Model:
         self.training_data = self.train_scaled if self.config.scale else self.train
         self.validation_data = self.val_scaled if self.config.scale else self.validation
         self.test_data = self.test_scaled if self.config.scale else self.test
+        if self.config.seed is not None:
+            random.seed(self.config.seed)
+            torch.manual_seed(self.config.seed)
+            np.random.seed(self.config.seed)
+            torch.cuda.manual_seed_all(self.config.seed)
 
     def train_model(self):
         raise NotImplementedError
