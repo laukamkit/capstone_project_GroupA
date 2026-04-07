@@ -65,7 +65,7 @@ class PatchTSTModel(Base_Model):
         criterion = nn.MSELoss()
         return criterion
     
-    def _compute_inverse_scaling(self, criterion, shape, pred, true):
+    def _compute_inverse_scaling(self, shape, pred, true):
         pos = self.nsw_data_loader.scaler.feature_names_in_.tolist().index(self.config.target_col)
         mean = self.nsw_data_loader.scaler.mean_[pos]
         var = self.nsw_data_loader.scaler.var_[pos]
@@ -127,7 +127,7 @@ class PatchTSTModel(Base_Model):
                 indices.append(idx)
                 
                 if self.config.scale:
-                    pred, true = self._compute_inverse_scaling(criterion, batch_y.shape, outputs, batch_y)
+                    pred, true = self._compute_inverse_scaling(batch_y.shape, outputs, batch_y)
                 else:
                     pred = outputs.numpy()
                     true = batch_y.numpy()
