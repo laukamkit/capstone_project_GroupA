@@ -123,8 +123,6 @@ def run_experiment(config: LSTMBaseConfig, experiment_name=None, save_best_model
     test_y = np.array([batch_y for i, (_, batch_y, _, _, _) in enumerate(test_loader)])
     test_y = test_y.reshape(-1,test_y.shape[-1])
 
-    train_batch_x, train_batch_y, train_batch_x_mark, train_batch_y_mark, train_batch_time = next(iter(train_loader))
-    val_batch_x, val_batch_y, val_batch_x_mark, val_batch_y_mark, val_batch_time = next(iter(val_loader))
     print("\nSequence shape (lookback, num_features):", train_x[0].shape)
 
     # 3. Convert to DataFrame for readability
@@ -168,50 +166,10 @@ def run_experiment(config: LSTMBaseConfig, experiment_name=None, save_best_model
     #xb0, yb0 = next(iter(seq_dict["train_loader"]))
     print("[DEBUG] First 5 y values from first train batch:", train_y[0][:5])
 
-    criterion = nn.MSELoss()
 
-    # Optimizer
-    optimizer_name = config.optimizer.lower()
-    lr = config.learning_rate
-    weight_decay = config.weight_decay
-
-    if optimizer_name == "adam":
-        optimizer = torch.optim.Adam(lstm_model.model.parameters(), lr=lr, weight_decay=weight_decay)
-    elif optimizer_name == "adamw":
-        optimizer = torch.optim.AdamW(lstm_model.model.parameters(), lr=lr, weight_decay=weight_decay)
-    elif optimizer_name == "sgd":
-        optimizer = torch.optim.SGD(lstm_model.model.parameters(), lr=lr, momentum=0.9, weight_decay=weight_decay)
-    else:
-        raise ValueError(f"Unsupported optimizer: {optimizer_name}")
-
-    scheduler = None
-    scheduler_name = config.scheduler
-    if scheduler_name:
-        scheduler_name = scheduler_name.lower()
-        if scheduler_name == "reduce_on_plateau":
-            scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-                optimizer,
-                mode="min",
-                factor=config.scheduler_factor,
-                patience=config.scheduler_patience,
-            )
-        elif scheduler_name == "step":
-            scheduler = torch.optim.lr_scheduler.StepLR(
-                optimizer,
-                step_size=config.scheduler_step_size,
-                gamma=config.scheduler_gamma,
-            )
-        else:
-            raise ValueError(f"Unsupported scheduler: {scheduler_name}")
 
     train_output = lstm_model.train_model(
-        train_loader=train_loader,
-        val_loader=val_loader,
-        criterion=criterion,
-        optimizer=optimizer,
-        epochs=config.training_epochs,
         patience=config.patience,
-        scheduler=scheduler,
         show_live_plots=show_live_plots,
     )
 
@@ -224,7 +182,6 @@ def run_experiment(config: LSTMBaseConfig, experiment_name=None, save_best_model
     lstm_model.model.load_state_dict(best_state)
 
     eval_dict = lstm_model.evaluate_model(
-        test_loader=test_loader,
         tolerance_pct=10.0,
     )
 
@@ -306,7 +263,7 @@ def run_experiment_suite(
     param_grid=None,
     n_repeats=1,
     base_seed=42,
-    save_dir=None,
+    save_results=None,
     save_best_model=False,
     show_live_plots=False,
 ):
@@ -404,7 +361,7 @@ def run_experiment_suite(
             ascending=[True, True]
         ).reset_index(drop=True)
 
-    if save_dir:
+    if save_results:
         results_path = os.path.join(NSWDataLoader.output_dir, "LSTM_results")
         if not os.path.exists(results_path):
             os.makedirs(results_path)
@@ -495,66 +452,77 @@ def summarise_runs(runs_df):
         ).reset_index(drop=True)
 
     return summary_df
-    
+
+# def live_plot_losses(self, train_losses, val_losses, title="Training History"):
+#     plt.figure(figsize=(8, 4))
+#     plt.plot(train_losses, label="Train Loss")
+#     plt.plot(val_losses, label="Val Loss")
+#     plt.xlabel("Epoch")
+#     plt.ylabel("MSE Loss")
+#     plt.title(title)
+#     plt.legend()
+#     plt.grid(True, alpha=0.3)
+#     plt.tight_layout()
+#     plt.show()   
 
 if __name__ == "__main__":
-    sarimax_config = SARIMAXConfig(
-        task_id="sarimax_test",
-        forecast_horizon=48,
-        lookback_window=1440, # For SARIMAX, this is the number of most recent time steps to use for training.
-        target_col='LOG_TOTALDEMAND',
-        used_log_target=True,
-        feature_cols=['demand_1_week_ago', 'demand_1_year_ago', 'TEMPERATURE','TEMP_SQUARED', 'IS_WEEKEND'],
-        scale=True,
-        p=[3],#2, 3, 4],
-        d=[0],
-        q=[0],
-        P=[1],
-        D=[1],
-        Q=[1],
-        seasonality_period=48,
-        enforce_stationarity=True,
-        enforce_invertibility=True
-    )
-    sarimax_model = SarimaxModel(sarimax_config)
-    sarimax_model.train_model()
-    all_origins, all_timestamps, all_actuals, all_predictions, mae, rmse, mse = sarimax_model.evaluate_model(None, test_mode=True)
+    # sarimax_config = SARIMAXConfig(
+    #     task_id="sarimax_test",
+    #     forecast_horizon=48,
+    #     lookback_window=1440, # For SARIMAX, this is the number of most recent time steps to use for training.
+    #     target_col='LOG_TOTALDEMAND',
+    #     used_log_target=True,
+    #     feature_cols=['demand_1_week_ago', 'demand_1_year_ago', 'TEMPERATURE','TEMP_SQUARED', 'IS_WEEKEND'],
+    #     scale=True,
+    #     p=[3],#2, 3, 4],
+    #     d=[0],
+    #     q=[0],
+    #     P=[1],
+    #     D=[1],
+    #     Q=[1],
+    #     seasonality_period=48,
+    #     enforce_stationarity=True,
+    #     enforce_invertibility=True
+    # )
+    # sarimax_model = SarimaxModel(sarimax_config)
+    # sarimax_model.train_model()
+    # all_origins, all_timestamps, all_actuals, all_predictions, mae, rmse, mse = sarimax_model.evaluate_model(None, test_mode=True)
 
-    patchtst_config = TransformersConfig(
-        task_id="patchtst_test",
-        model="PatchTST",
-        forecast_horizon=48,
-        lookback_window=336,
-        used_log_target=True,
-        target_col='LOG_TOTALDEMAND',
-        feature_cols=['TEMPERATURE', 'TEMP_SQUARED', 'IS_WEEKEND', 'demand_1_year_ago'],
-        scale=True,
-        date_col='DATETIME',
-        variate='MS',
-        patch_len=16,
-        stride=8,
-        d_model=128,
-        num_attention_heads=4,
-        num_encoder_layers=3,
-        dim_ff=256,
-        dropout=0.1,
-        dropout_head_fc=0.1,
-        use_gpu=True,
-        time_encoding='timeF',
-        shuffle_flag=True,
-        training_epochs=1,
-        batch_size=64,
-        learning_rate=0.0001,
-        output_attention=False,
-        lradj='TST',
-        patience=10,
-    )
-    patch_tst_model = PatchTSTModel(patchtst_config)
-    patch_tst_model.train_model()
-    patch_tst_model.evaluate_model(test_mode=1)
+    # patchtst_config = TransformersConfig(
+    #     task_id="patchtst_test",
+    #     model="PatchTST",
+    #     forecast_horizon=48,
+    #     lookback_window=336,
+    #     used_log_target=True,
+    #     target_col='LOG_TOTALDEMAND',
+    #     feature_cols=['TEMPERATURE', 'TEMP_SQUARED', 'IS_WEEKEND', 'demand_1_year_ago'],
+    #     scale=True,
+    #     date_col='DATETIME',
+    #     variate='MS',
+    #     patch_len=16,
+    #     stride=8,
+    #     d_model=128,
+    #     num_attention_heads=4,
+    #     num_encoder_layers=3,
+    #     dim_ff=256,
+    #     dropout=0.1,
+    #     dropout_head_fc=0.1,
+    #     use_gpu=True,
+    #     time_encoding='timeF',
+    #     shuffle_flag=True,
+    #     training_epochs=1,
+    #     batch_size=64,
+    #     learning_rate=0.0001,
+    #     output_attention=False,
+    #     lradj='TST',
+    #     patience=10,
+    # )
+    # patch_tst_model = PatchTSTModel(patchtst_config)
+    # patch_tst_model.train_model()
+    # patch_tst_model.evaluate_model(test_mode=1)
 
-    RUN_SINGLE = False
-    RUN_SWEEP = True
+    RUN_SINGLE = True
+    RUN_SWEEP = False
     RUN_REPEATED = False
     SEED = 42
     BASE_CONFIG = LSTMBaseConfig(
@@ -565,7 +533,7 @@ if __name__ == "__main__":
         dropout= 0.4,
         learning_rate= 5e-5,
         batch_size= 64,
-        training_epochs= 100,
+        training_epochs= 1,
         patience= 8,
         use_mlp_head= True,
         mlp_hidden_size= 64,
@@ -580,7 +548,7 @@ if __name__ == "__main__":
         num_attention_heads= 4,
     )
 
-    summary_path = os.path.join(NSWDataLoader.output_dir,"LSTM_summary")
+    summary_path = os.path.join(NSWDataLoader.output_dir,"results","LSTM_summary")
     if not os.path.exists(summary_path):
         os.makedirs(summary_path)
 
@@ -591,7 +559,7 @@ if __name__ == "__main__":
             param_grid=None,
             n_repeats=1,
             base_seed=SEED,
-            save_dir=1,
+            save_results=1,
             save_best_model=True,
             show_live_plots=False,
         )
@@ -626,13 +594,21 @@ if __name__ == "__main__":
             param_grid=PARAM_GRID,
             n_repeats=1,
             base_seed=SEED,
-            save_dir=1,
+            save_results=1,
             save_best_model=True,
             show_live_plots=False
         )
 
         summary_df = summarise_runs(runs_df)
         summary_df.to_csv(os.path.join(summary_path, "sweep_run_summary.csv"), index=False)
+        
+        
+        
+        
+        
+        
+        
+        
         # print("\nRaw run results:")
         # display(runs_df.head())
 

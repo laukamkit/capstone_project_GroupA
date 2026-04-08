@@ -75,32 +75,57 @@ class LSTMModel(DeepLearningModel):
 
         return model.to(torch.device("cuda" if torch.cuda.is_available() else "cpu"))
 
+    def _select_criterion(self):
+        criterion = nn.MSELoss()
+        return criterion
+
+    def _select_optimizer(self):
+        # Optimizer
+        optimizer_name = self.config.optimizer.lower()
+        lr = self.config.learning_rate
+        weight_decay = self.config.weight_decay
+
+        if optimizer_name == "adam":
+            optimizer = torch.optim.Adam(self.model.parameters(), lr=lr, weight_decay=weight_decay)
+        elif optimizer_name == "adamw":
+            optimizer = torch.optim.AdamW(self.model.parameters(), lr=lr, weight_decay=weight_decay)
+        elif optimizer_name == "sgd":
+            optimizer = torch.optim.SGD(self.model.parameters(), lr=lr, momentum=0.9, weight_decay=weight_decay)
+        else:
+            raise ValueError(f"Unsupported optimizer: {optimizer_name}")
+        return optimizer
+
+    def _get_scheduler(self, optimizer):
+        scheduler = None
+        scheduler_name = self.config.scheduler
+        if scheduler_name:
+            scheduler_name = scheduler_name.lower()
+            if scheduler_name == "reduce_on_plateau":
+                scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+                    optimizer,
+                    mode="min",
+                    factor=self.config.scheduler_factor,
+                    patience=self.config.scheduler_patience,
+                )
+            elif scheduler_name == "step":
+                scheduler = torch.optim.lr_scheduler.StepLR(
+                    optimizer,
+                    step_size=self.config.scheduler_step_size,
+                    gamma=self.config.scheduler_gamma,
+                )
+            else:
+                raise ValueError(f"Unsupported scheduler: {scheduler_name}")
+        return scheduler
     
-    # def live_plot_losses(self, train_losses, val_losses, title="Training History"):
-    #     plt.figure(figsize=(8, 4))
-    #     plt.plot(train_losses, label="Train Loss")
-    #     plt.plot(val_losses, label="Val Loss")
-    #     plt.xlabel("Epoch")
-    #     plt.ylabel("MSE Loss")
-    #     plt.title(title)
-    #     plt.legend()
-    #     plt.grid(True, alpha=0.3)
-    #     plt.tight_layout()
-    #     plt.show()
-
-
     def train_model(
         self,
-        train_loader: DataLoader,
-        val_loader: DataLoader,
-        criterion,
-        optimizer,
-        epochs=50,
         patience=10,
-        scheduler=None,
         show_live_plots=False,
         title="Training History",
     ):
+        train_data, train_loader = self._get_data(flag='train')
+        val_data, val_loader = self._get_data(flag='val')
+
         train_losses = []
         val_losses = []
 
@@ -108,8 +133,11 @@ class LSTMModel(DeepLearningModel):
         best_epoch = -1
         best_state = None
         epochs_no_improve = 0
+        criterion = self._select_criterion()
+        optimizer = self._select_optimizer()
+        scheduler = self._get_scheduler(optimizer)
 
-        for epoch in range(epochs):
+        for epoch in range(self.config.training_epochs):
             self.model.train()
             running_train_loss = 0.0
 
@@ -160,7 +188,7 @@ class LSTMModel(DeepLearningModel):
                 epochs_no_improve += 1
 
             print(
-                f"Epoch [{epoch+1}/{epochs}] | "
+                f"Epoch [{epoch+1}/{self.config.training_epochs}] | "
                 f"Train Loss: {epoch_train_loss:.6f} | "
                 f"Val Loss: {epoch_val_loss:.6f}"
             )
@@ -183,6 +211,7 @@ class LSTMModel(DeepLearningModel):
             "train_losses": train_losses,
             "val_losses": val_losses,
         }
+
     
     def _compute_inverse_scaling(self, shape, pred, true):
             pos = self.nsw_data_loader.scaler.feature_names_in_.tolist().index(self.config.target_col)
@@ -198,28 +227,44 @@ class LSTMModel(DeepLearningModel):
             true_inverse = true_inverse[:, -1:].reshape(shape)
             return pred_inverse, true_inverse
     
-    def evaluate_model(self, test_loader, tolerance_pct=10.0):
+    def evaluate_model(self, tolerance_pct=10.0):
+        test_data, test_loader = self._get_data(flag='test')
         self.model.eval()
         y_pred_scaled = []
         y_true_scaled = []
-
+        timestamps = []
+        batch_nums = []
+        batch_windows = []
         with torch.no_grad():
-            for X_batch, y_batch, _, _, _ in test_loader:
+            for i, (X_batch, y_batch, _, _, batch_time) in enumerate(test_loader):
                 X_batch = X_batch.to(self.device)
                 preds = self.model(X_batch).cpu().numpy()
-
+                batch_window = np.arange(y_batch[:, -1].numpy().shape[0])
+                ts = batch_time[:, -1].detach().cpu().numpy()
+                current_batch_number = np.zeros(ts.shape)+i
                 y_pred_scaled.extend(preds)
                 y_true_scaled.extend(y_batch[:, -1].numpy())
+                batch_windows.extend(batch_window)
+                timestamps.extend(ts)
+                batch_nums.extend(current_batch_number)
 
         y_pred_scaled = np.array(y_pred_scaled).reshape(-1, 1)
         y_true_scaled = np.array(y_true_scaled).reshape(-1, 1)
+        batch_windows = np.array(batch_windows).reshape(-1, 1)
+        timestamps = np.array(timestamps, dtype='<M8[us]').reshape(-1, 1)
+        batch_nums = np.array(batch_nums).reshape(-1, 1)
 
         y_pred_real, y_true_real = self._compute_inverse_scaling(y_pred_scaled.shape, y_pred_scaled, y_true_scaled)
         if self.config.used_log_target:
             y_pred_real = np.exp(y_pred_real)
             y_true_real = np.exp(y_true_real)
+        y_pred_scaled = y_pred_scaled.ravel()
+        y_true_scaled = y_true_scaled.ravel()
         y_pred_real = y_pred_real.ravel()
         y_true_real = y_true_real.ravel()
+        batch_windows = batch_windows.ravel()
+        timestamps = timestamps.ravel()
+        batch_nums = batch_nums.ravel()
 
         rmse = np.sqrt(mean_squared_error(y_true_real, y_pred_real))
         mae = mean_absolute_error(y_true_real, y_pred_real)
@@ -237,11 +282,15 @@ class LSTMModel(DeepLearningModel):
         ) * 100
 
         return {
+            "index": batch_nums.astype(int),
+            "horizon": batch_windows.astype(int),
+            "timestamp": timestamps,
             "y_pred_scaled": y_pred_scaled,
             "y_true_scaled": y_true_scaled,
             "y_pred_real": y_pred_real,
             "y_true_real": y_true_real,
             "rmse": rmse,
+            "mse": rmse**2,
             "mae": mae,
             "mape": mape,
             "r2": r2,
@@ -328,7 +377,6 @@ class PatchTSTModel(DeepLearningModel):
         return pred_inverse, true_inverse
     
     def evaluate_model(self, test_mode=0):
-        criterion = self._select_criterion()
         test_data, test_loader = self._get_data(flag='test' if test_mode else 'val')
 
         if test_mode:
@@ -344,15 +392,16 @@ class PatchTSTModel(DeepLearningModel):
         preds = []
         trues = []
         timestamps = []
-        indices = []
+        batch_nums = []
+        batch_windows = []
         self.model.eval()
         with torch.no_grad():
-            for i, (batch_x, batch_y, batch_x_mark, batch_y_mark, batch_time) in enumerate(test_loader):
+            for i, (batch_x, batch_y, batch_x_mark, _, batch_time) in enumerate(test_loader):
                 batch_x = batch_x.float().to(self.device)
-                batch_y = batch_y.float().to(self.device)
-
+                batch_y = batch_y.float()
                 batch_x_mark = batch_x_mark.float().to(self.device)
-                batch_y_mark = batch_y_mark.float().to(self.device)
+                batch_window = (np.zeros((batch_time.shape[0],batch_time.shape[1])) + np.arange(batch_time.shape[1]))
+
                 if 'Linear' in self.config.model or 'TST' in self.config.model:
                         outputs = self.model(batch_x)
                 else:
@@ -364,15 +413,15 @@ class PatchTSTModel(DeepLearningModel):
 
                 f_dim = -1 if self.config.variate == 'MS' else 0
                 outputs = outputs[:, -self.config.forecast_horizon:, f_dim:]
-                batch_y = batch_y[:, -self.config.forecast_horizon:, f_dim:].to(self.device)
+                batch_y = batch_y[:, -self.config.forecast_horizon:, f_dim:]
                 batch_time = batch_time[:, -self.config.forecast_horizon:]
+                batch_window = batch_window[:, -self.config.forecast_horizon:]
                 outputs = outputs.detach().cpu()
                 batch_y = batch_y.detach().cpu()
                 
-                batch_time = batch_time.detach().cpu().numpy()
-                ts = batch_time
-                idx = np.zeros(ts.shape)+i
-                indices.append(idx)
+                ts = batch_time.detach().cpu().numpy()
+                current_batch_number = np.zeros(ts.shape)+i
+                batch_nums.append(current_batch_number)
                 
                 if self.config.scale:
                     pred, true = self._compute_inverse_scaling(batch_y.shape, outputs, batch_y)
@@ -385,21 +434,24 @@ class PatchTSTModel(DeepLearningModel):
                 preds.append(pred)
                 trues.append(true)
                 timestamps.append(ts)
-
+                batch_windows.append(batch_window)
         preds = np.array(preds)
         trues = np.array(trues)
         timestamps = np.array(timestamps, dtype='<M8[us]')
-        indices = np.array(indices)
+        batch_nums = np.array(batch_nums)
+        batch_windows = np.array(batch_windows)
 
         preds = preds.reshape(-1, preds.shape[-2], preds.shape[-1])
         trues = trues.reshape(-1, trues.shape[-2], trues.shape[-1])
         timestamps = timestamps.reshape(-1, timestamps.shape[-1])
-        indices = indices.reshape(-1, indices.shape[-1])
+        batch_nums = batch_nums.reshape(-1, batch_nums.shape[-1])
+        batch_windows = batch_windows.reshape(-1, batch_windows.shape[-1])
         mae, mse, rmse, mape, mspe, rse, corr = metric(preds, trues)
         
         # result save
         results_df = pd.DataFrame({
-            'index': indices.flatten().astype(int),
+            'index': batch_nums.flatten().astype(int),
+            'horizon': batch_windows.flatten().astype(int),
             'timestamp': timestamps.flatten(),
             'y_actual': trues.flatten(),
             'y_pred': preds.flatten(),
@@ -413,13 +465,11 @@ class PatchTSTModel(DeepLearningModel):
             print(f"Saved detailed rolling forecast results to {results_path}/{self.config.task_id}_test_results.csv")
         else:
             self.model.train()
-        return indices.flatten().astype(int), timestamps.flatten(), trues.flatten(), preds.flatten(), mae, rmse, mse
+        return batch_nums.flatten().astype(int), timestamps.flatten(), trues.flatten(), preds.flatten(), batch_windows.flatten(), mae, rmse, mse
 
     
     def train_model(self):
         train_data, train_loader = self._get_data(flag='train')
-        vali_data, vali_loader = self._get_data(flag='val')
-        test_data, test_loader = self._get_data(flag='test')
 
         checkpoint_path = os.path.join(NSWDataLoader.output_dir, f"{self.config.model}_checkpoints")
         if not os.path.exists(checkpoint_path):
@@ -466,7 +516,6 @@ class PatchTSTModel(DeepLearningModel):
                 batch_x_mark = batch_x_mark.float().to(self.device)
                 batch_y_mark = batch_y_mark.float().to(self.device)
 
-                # encoder - decoder
                 if 'Linear' in self.config.model or 'TST' in self.config.model:
                         outputs = self.model(batch_x)
                 else:
