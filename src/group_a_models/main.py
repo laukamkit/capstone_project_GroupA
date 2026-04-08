@@ -110,20 +110,7 @@ def run_experiment(config: LSTMBaseConfig, experiment_name=None, save_best_model
         print("\nNo feature list found in config.feature_cols.")
 
     # 2. Shape check
-    train_x = np.array([batch_x for i, (batch_x, _, _, _, _) in enumerate(train_loader)])
-    train_x = train_x.reshape(-1,train_x.shape[2],train_x.shape[-1])
-    train_y = np.array([batch_y for i, (_, batch_y, _, _, _) in enumerate(train_loader)])
-    train_y = train_y.reshape(-1,train_y.shape[-1])
-    val_x = np.array([batch_x for i, (batch_x, _, _, _, _) in enumerate(val_loader)])
-    val_x = val_x.reshape(-1,val_x.shape[2],val_x.shape[-1])
-    val_y = np.array([batch_y for i, (_, batch_y, _, _, _) in enumerate(val_loader)])
-    val_y = val_y.reshape(-1,val_y.shape[-1])
-    test_x = np.array([batch_x for i, (batch_x, _, _, _, _) in enumerate(test_loader)])
-    test_x = test_x.reshape(-1,test_x.shape[2],test_x.shape[-1])
-    test_y = np.array([batch_y for i, (_, batch_y, _, _, _) in enumerate(test_loader)])
-    test_y = test_y.reshape(-1,test_y.shape[-1])
-
-    print("\nSequence shape (lookback, num_features):", train_x[0].shape)
+    print("\nSequence shape (lookback, num_features):", next(iter(train_loader))[0][0].shape)
 
     # 3. Convert to DataFrame for readability
     # if config.feature_cols is not None:
@@ -135,25 +122,25 @@ def run_experiment(config: LSTMBaseConfig, experiment_name=None, save_best_model
     #     print(df_seq.tail())
     #else:
     print("\nRaw sequence values (first 5 timesteps):")
-    print(train_x[0][:5])
+    print(next(iter(train_loader))[0][0][:5])
 
     # 4. Target check
-    print("\nTarget (scaled):", train_y[0][0])
+    print("\nTarget (scaled):", next(iter(train_loader))[1][0][0])
 
     # Optional: inverse transform
     if config.scale:
         pos = lstm_model.scaler.feature_names_in_.tolist().index(config.target_col)
         mean = lstm_model.scaler.mean_[pos]
         var = lstm_model.scaler.var_[pos]
-        y_real = train_y[0][0]* var**0.5 + mean
+        y_real = next(iter(train_loader))[1][0][0]* var**0.5 + mean
         print("Target (real scale):", y_real)
 
     print("="*60 + "\n")
 
     print("\nSequence shapes:")
-    print("X_train:", train_x.shape, "| y_train:", train_y.shape)
-    print("X_val:  ", val_x.shape,   "| y_val:  ", val_y.shape)
-    print("X_test: ", test_x.shape,  "| y_test: ", test_y.shape)
+    print("X_train:", train_data.shape()[0], "| y_train:", train_data.shape()[1])
+    print("X_val:  ", val_data.shape()[0],   "| y_val:  ", val_data.shape()[1])
+    print("X_test: ", test_data.shape()[0],  "| y_test: ", test_data.shape()[1])
 
     #model = build_model(config, input_size=seq_dict["X_train"].shape[2])
 
@@ -164,7 +151,7 @@ def run_experiment(config: LSTMBaseConfig, experiment_name=None, save_best_model
         break
 
     #xb0, yb0 = next(iter(seq_dict["train_loader"]))
-    print("[DEBUG] First 5 y values from first train batch:", train_y[0][:5])
+    print("[DEBUG] First 5 y values from first train batch:", next(iter(train_loader))[1][0][:5])
 
 
 
