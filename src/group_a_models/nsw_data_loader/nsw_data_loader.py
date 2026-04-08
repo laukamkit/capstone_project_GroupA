@@ -6,10 +6,12 @@ import pandas as pd
 import numpy as np
 from sklearn.preprocessing import StandardScaler
 from torch.utils.data import DataLoader
-from nsw_data_loader.nsw_data_set import NSWDataSet
-from model_configs import Config, TransformersConfig
+from nsw_data_loader.nsw_data_set import LSTMDataSet, TransformersDataSet
+from model_configs import Config, LSTMBaseConfig, TransformersConfig
 
 class NSWDataLoader:
+    output_dir = ''
+    
     def __init__(self, train_size: float = 0.6, val_size: float = 0.2):
         self._set_repo_path()
         self.train_size = train_size
@@ -27,8 +29,8 @@ class NSWDataLoader:
             if os.path.exists(path):
                 print(f'Found NSW data path: {path}')
                 self.nsw_path = path
-                self.output_dir = os.path.join(self.nsw_path, "..", ".." ,"results")
-                os.makedirs(self.output_dir, exist_ok=True)
+                NSWDataLoader.output_dir = os.path.join(self.nsw_path, "..", ".." ,"results")
+                os.makedirs(NSWDataLoader.output_dir, exist_ok=True)
                 return
         raise FileNotFoundError("NSW data path not found.")
 
@@ -71,12 +73,20 @@ class NSWDataLoader:
         return train, validation, test, train_scaled, val_scaled, test_scaled, scaler
     
     @classmethod
-    def data_provider(cls, train_df, val_df, test_df, config:TransformersConfig, flag):
+    def data_provider(cls, train_df, val_df, test_df, config, flag):
         if flag == 'test':
             shuffle_flag = False
         else:
             shuffle_flag = True
-        data_set = NSWDataSet(
+        
+        if isinstance(config, TransformersConfig):
+            Data = TransformersDataSet
+        elif isinstance(config, LSTMBaseConfig):
+            Data = LSTMDataSet
+        else:
+            raise ValueError("Unsupported config type for data provider.")
+        
+        data_set = Data(
             config=config,
             train_df=train_df,
             val_df=val_df,
