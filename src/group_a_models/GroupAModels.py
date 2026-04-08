@@ -281,7 +281,7 @@ class LSTMModel(DeepLearningModel):
             np.abs(y_pred_real - y_true_real) <= tolerance * np.abs(y_true_real)
         ) * 100
 
-        return {
+        eval_dict = {
             "index": batch_nums.astype(int),
             "horizon": batch_windows.astype(int),
             "timestamp": timestamps,
@@ -296,6 +296,13 @@ class LSTMModel(DeepLearningModel):
             "r2": r2,
             "within_tol_acc": within_tol_acc,
         }
+        results_df = pd.DataFrame(eval_dict)
+        results_path = os.path.join(NSWDataLoader.output_dir, f"LSTM_results")
+        if not os.path.exists(results_path):
+            os.makedirs(results_path)
+        results_df.to_csv(os.path.join(results_path, f"{self.config.task_id}_{self.config.model_type}_test_results.csv"), index=False)
+        print(f"Saved detailed rolling forecast results to {results_path}/{self.config.task_id}_{self.config.model_type}_test_results.csv")
+        return eval_dict
 
 
 
