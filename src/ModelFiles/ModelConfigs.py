@@ -54,6 +54,25 @@ class SARIMAXConfig(Config):
     enforce_stationarity: bool
     enforce_invertibility: bool
     eval_step_size: int = 48 # every 1 day
+    @property
+    def config_params_to_results(self) -> dict:
+        return {
+            "model_type": "SARIMAX",
+            "p": self.p,
+            "d": self.d,
+            "q": self.q,
+            "P": self.P,
+            "D": self.D,
+            "Q": self.Q,
+            "seasonality_period": self.seasonality_period,
+            "enforce_stationarity": self.enforce_stationarity,
+            "enforce_invertibility": self.enforce_invertibility,
+            "lookback": self.lookback_window,
+            "horizon": self.forecast_horizon,
+            "target_lags": self.target_lags,
+            "feature_lags": self.feature_lags,
+            "val_step_size": self.val_step_size,
+        }
     
 @dataclass(kw_only=True)
 class DeepLearningConfig(Config):
@@ -98,7 +117,23 @@ class TransformersConfig(DeepLearningConfig):
     @property
     def c_out(self) -> int:
         return 1
-    
+    @property
+    def config_params_to_results(self) -> dict:
+        return {
+            "model_type": self.model.value,
+            "variate": self.variate,
+            "patch_len": self.patch_len,
+            "stride": self.stride,
+            "d_model": self.d_model,
+            "num_encoder_layers": self.num_encoder_layers,
+            "dim_ff": self.dim_ff,
+            "dropout": self.dropout,
+            "dropout_head_fc": self.dropout_head_fc,
+            "lookback": self.lookback_window,
+            "horizon": self.forecast_horizon,
+            "demand_lags": self.target_lags,
+            "feature_lags": self.feature_lag_cols,
+        }
 
 
 @dataclass(kw_only=True)
