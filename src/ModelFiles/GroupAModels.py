@@ -125,7 +125,11 @@ class GradientBoostingModel(BaseModel):
         })
         metrics_df = pd.DataFrame({
             'rmse': [rmse],
-            'mae': [mae]
+            'mae': [mae],
+            'total_epochs_run': [None],
+            'best_epoch': [None],
+            'early_stop_epoch': [None],
+            **{k: [v] for k, v in self.config.config_params_to_results.items()}
         })
         if test_mode:
             os.makedirs(os.path.join(NSWDataLoader.output_dir, "gradient_boosting_results"), exist_ok=True)
@@ -142,6 +146,9 @@ class LSTMModel(DeepLearningModel):
         super().__init__(config, func)
         self.config: LSTMConfig = config
         self.model = self._build_model(config, input_size=len(self.config.all_feature_cols)+1)
+        self.total_epochs_run: int | None = None
+        self.best_epoch: int | None = None
+        self.early_stop_epoch: int | None = None
 
     def _build_model(self, config: LSTMConfig, input_size):
         model_type = config.model_type.value
@@ -317,6 +324,10 @@ class LSTMModel(DeepLearningModel):
                 print(f"Early stopping triggered at epoch {epoch+1}")
                 break
 
+        self.total_epochs_run = len(train_losses)
+        self.best_epoch = best_epoch + 1  # 1-indexed
+        self.early_stop_epoch = epoch + 1 if epochs_no_improve >= self.config.patience else None
+
         if best_state is None:
             best_state = deepcopy(self.model.state_dict())
 
@@ -416,7 +427,11 @@ class LSTMModel(DeepLearningModel):
             "mae": [mae],
             "mape": [mape],
             "r2": [r2],
-            "within_tol_acc": [within_tol_acc]
+            "within_tol_acc": [within_tol_acc],
+            "total_epochs_run": [self.total_epochs_run],
+            "best_epoch": [self.best_epoch],
+            "early_stop_epoch": [self.early_stop_epoch],
+            **{k: [v] for k, v in self.config.config_params_to_results.items()}
         })
         results_path = os.path.join(NSWDataLoader.output_dir, f"LSTM_results")
         if not os.path.exists(results_path):
@@ -443,6 +458,9 @@ class PatchTSTModel(DeepLearningModel):
         super().__init__(config, func)
         self.config: TransformersConfig = config
         self.model = self._build_model().to(self.device)
+        self.total_epochs_run: int | None = None
+        self.best_epoch: int | None = None
+        self.early_stop_epoch: int | None = None
    
     def _build_model(self):
         model_dict = {
@@ -558,7 +576,11 @@ class PatchTSTModel(DeepLearningModel):
         metrics_df = pd.DataFrame({
             'mae': [mae],
             'mse': [mse],
-            'rmse': [rmse]
+            'rmse': [rmse],
+            'total_epochs_run': [self.total_epochs_run],
+            'best_epoch': [self.best_epoch],
+            'early_stop_epoch': [self.early_stop_epoch],
+            **{k: [v] for k, v in self.config.config_params_to_results.items()}
         })
         if test_mode:
             print(f"Test Results - MAE: {mae:.2f} MW | RMSE: {rmse:.2f} MW | MSE: {mse:.2f} MW^2")
@@ -588,6 +610,9 @@ class PatchTSTModel(DeepLearningModel):
 
         model_optim = self._select_optimizer()
         criterion = self._select_criterion()
+
+        best_val_rmse_train = float("inf")
+        best_epoch_train = -1
             
         scheduler = lr_scheduler.OneCycleLR(optimizer = model_optim,
                                             steps_per_epoch = train_steps,
@@ -652,6 +677,9 @@ class PatchTSTModel(DeepLearningModel):
             print("Epoch: {} cost time: {}".format(epoch + 1, cost_time))
             train_loss = np.average(train_loss)
             _, _, _, _, _, mae_val, rmse_val, mse_val = self.evaluate_model()
+            if rmse_val < best_val_rmse_train:
+                best_val_rmse_train = rmse_val
+                best_epoch_train = epoch + 1
             progress_log['model_name'].append(self.config.task_id)
             progress_log['lookback_window'].append(self.config.lookback_window)
             progress_log['epoch'].append(epoch + 1)
@@ -672,6 +700,9 @@ class PatchTSTModel(DeepLearningModel):
                 print('Updating learning rate to {}'.format(scheduler.get_last_lr()[0]))
 
         best_model_path = checkpoint_path + '/' + f'{self.config.task_id}_checkpoint.pth'
+        self.total_epochs_run = epoch + 1
+        self.best_epoch = best_epoch_train
+        self.early_stop_epoch = epoch + 1 if early_stopping.early_stop else None
         self.model.load_state_dict(torch.load(best_model_path))
         fitting_progress_log_df = pd.DataFrame(progress_log)
         if self.config.save_results:
@@ -781,7 +812,11 @@ class SarimaxModel(BaseModel):
         metrics_df = pd.DataFrame({
             'rmse': [rmse],
             'mse': [mse],
-            'mae': [mae]
+            'mae': [mae],
+            'total_epochs_run': [None],
+            'best_epoch': [None],
+            'early_stop_epoch': [None],
+            **{k: [v] for k, v in self.config.config_params_to_results.items()}
         })
         if test_mode:
             os.makedirs(os.path.join(NSWDataLoader.output_dir, "sarimax_results"), exist_ok=True)

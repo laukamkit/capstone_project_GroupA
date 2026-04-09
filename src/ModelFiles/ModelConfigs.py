@@ -40,6 +40,19 @@ class GradientBoostingConfig(Config):
     learning_rate: float = 0.1
     max_depth: int = 3
     verbose: int = 0
+    @property
+    def config_params_to_results(self) -> dict:
+        return {
+            "model_type": "GradientBoosting",
+            "n_estimators": self.n_estimators,
+            "learning_rate": self.learning_rate,
+            "max_depth": self.max_depth,
+            "lookback": self.lookback_window,
+            "horizon": self.forecast_horizon,
+            "target_lags": self.target_lags,
+            "target_mas": self.target_mas,
+            "feature_lags": self.feature_lag_cols,
+        }
 
 @dataclass(kw_only=True)
 class SARIMAXConfig(Config):
