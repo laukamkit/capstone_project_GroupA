@@ -6,8 +6,8 @@ import pandas as pd
 import numpy as np
 from sklearn.preprocessing import StandardScaler
 from torch.utils.data import DataLoader
-from nsw_data_loader.nsw_data_set import LSTMDataSet, TransformersDataSet
-from model_configs import Config, LSTMBaseConfig, TransformersConfig
+from NSWData.NSWDataSet import LSTMDataSet, TransformersDataSet
+from ModelFiles.ModelConfigs import Config, LSTMConfig, TransformersConfig
 
 class NSWDataLoader:
     output_dir = ''
@@ -81,7 +81,7 @@ class NSWDataLoader:
         
         if isinstance(config, TransformersConfig):
             Data = TransformersDataSet
-        elif isinstance(config, LSTMBaseConfig):
+        elif isinstance(config, LSTMConfig):
             Data = LSTMDataSet
         else:
             raise ValueError("Unsupported config type for data provider.")

@@ -8,8 +8,8 @@ from torch import Tensor
 import torch.nn.functional as F
 import numpy as np
 
-from PatchTST_supervised.layers.PatchTST_backbone import PatchTST_backbone
-from PatchTST_supervised.layers.PatchTST_layers import series_decomp
+from ModelFiles.PatchTST_supervised.layers.PatchTST_backbone import PatchTST_backbone
+from ModelFiles.PatchTST_supervised.layers.PatchTST_layers import series_decomp
 
 
 class Model(nn.Module):

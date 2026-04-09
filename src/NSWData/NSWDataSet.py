@@ -1,8 +1,8 @@
 from torch.utils.data import Dataset
 import pandas as pd
 import numpy as np
-from model_configs import Config, DeepLearningConfig, LSTMBaseConfig, TransformersConfig
-from PatchTST_supervised.utils.timefeatures import time_features
+from ModelFiles.ModelConfigs import Config, DeepLearningConfig, LSTMConfig, TransformersConfig
+from ModelFiles.PatchTST_supervised.utils.timefeatures import time_features
 from torch.utils.data import Dataset
 import pandas as pd
 
@@ -49,9 +49,10 @@ class BaseDeepLearningNSWDataSet(Dataset):
         else:
             seq_x_mark = np.zeros((len(seq_x), 1)) # dummy time encoding features if not using time encoding, to maintain consistent return type
             seq_y_mark = np.zeros((len(seq_y), 1)) # dummy time encoding features if not using time encoding, to maintain consistent return type
-        seq_time = self.time_stamp[r_begin:r_end]
+        seq_x_time = self.time_stamp[s_begin:s_end]
+        seq_y_time = self.time_stamp[r_begin:r_end]
 
-        return seq_x.copy(), seq_y.copy(), seq_x_mark.copy() if seq_x_mark is not None else None, seq_y_mark.copy() if seq_y_mark is not None else None, seq_time.copy()
+        return seq_x.copy(), seq_y.copy(), seq_x_mark.copy() if seq_x_mark is not None else None, seq_y_mark.copy() if seq_y_mark is not None else None, seq_x_time.copy(), seq_y_time.copy()
 
     def __len__(self):
         return len(self.data_x) - self.config.lookback_window - self.config.forecast_horizon + 1
@@ -107,9 +108,9 @@ class TransformersDataSet(BaseDeepLearningNSWDataSet):
 class LSTMDataSet(BaseDeepLearningNSWDataSet):
     """For PatchTSTConfig and LSTMConfig that require lookback windows"""
     
-    def __init__(self, config:LSTMBaseConfig, train_df, val_df, test_df, flag='train'):
+    def __init__(self, config:LSTMConfig, train_df, val_df, test_df, flag='train'):
         super().__init__(config, train_df, val_df, test_df, flag)
-        self.config: LSTMBaseConfig = config
+        self.config: LSTMConfig = config
         
         assert flag in ['train', 'test', 'val']
         type_map = {'train': 0, 'val': 1, 'test': 2}

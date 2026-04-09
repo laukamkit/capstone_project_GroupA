@@ -1,13 +1,13 @@
 import pandas as pd, numpy as np, os, torch, torch.nn as nn
-from PatchTST_supervised.models import PatchTST, TimeXer
-from PatchTST_supervised.models import iTransformer
-from PatchTST_supervised.utils.tools import EarlyStopping, adjust_learning_rate, test_params_flop
-from PatchTST_supervised.utils.metrics import metric
-from LSTM.models import AttentionBiLSTMForecaster, MultiHeadAttentionBiLSTMForecaster, SequenceForecaster
-from nsw_data_loader.nsw_data_loader import NSWDataLoader
-from model_configs import TransformersConfig, SARIMAXConfig, LSTMBaseConfig
-from BasicModels import BaseModel, DeepLearningModel
-from torch.utils.data import DataLoader
+from ModelFiles.PatchTST_supervised.models import PatchTST, TimeXer
+from ModelFiles.PatchTST_supervised.models import iTransformer
+from ModelFiles.PatchTST_supervised.utils.tools import EarlyStopping, adjust_learning_rate
+from ModelFiles.PatchTST_supervised.utils.metrics import metric
+from ModelFiles.LSTM.models import AttentionBiLSTMForecaster, MultiHeadAttentionBiLSTMForecaster, SequenceForecaster
+from NSWData.NSWDataLoader import NSWDataLoader
+from ModelFiles.ModelConfigs import TransformersConfig, SARIMAXConfig, LSTMConfig
+from ModelFiles.ModelEnums import *
+from ModelFiles.BasicModels import BaseModel, DeepLearningModel
 from statsmodels.tsa.statespace.sarimax import SARIMAX, SARIMAXResultsWrapper
 from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 from time import time
@@ -17,15 +17,15 @@ from torch.optim import lr_scheduler
 from typing import Callable
 
 class LSTMModel(DeepLearningModel):
-    def __init__(self, config: LSTMBaseConfig, func: Callable[[pd.DataFrame,str ,list[str],list[int] | None, list[int] | None], pd.DataFrame] | None = None):
+    def __init__(self, config: LSTMConfig, func: Callable[[pd.DataFrame,str ,list[str],list[int] | None, list[int] | None], pd.DataFrame] | None = None):
         super().__init__(config, func)
-        self.config: LSTMBaseConfig = config
+        self.config: LSTMConfig = config
         self.model = self._build_model(config, input_size=len(self.config.all_feature_cols)+1)
-        
-    def _build_model(self, config, input_size):
-        model_type = config.model_type.lower()
 
-        if model_type == "lstm":
+    def _build_model(self, config: LSTMConfig, input_size):
+        model_type = config.model_type.value
+
+        if model_type == LSTMModelType.LSTM.value:
             model = SequenceForecaster(
                 input_size=input_size,
                 hidden_size=config.hidden_size,
@@ -36,7 +36,7 @@ class LSTMModel(DeepLearningModel):
                 mlp_hidden_size=config.mlp_hidden_size,
             )
 
-        elif model_type == "bilstm":
+        elif model_type == LSTMModelType.BILSTM.value:
             model = SequenceForecaster(
                 input_size=input_size,
                 hidden_size=config.hidden_size,
@@ -47,7 +47,7 @@ class LSTMModel(DeepLearningModel):
                 mlp_hidden_size=config.mlp_hidden_size,
             )
 
-        elif model_type == "attention_bilstm":
+        elif model_type == LSTMModelType.MULTIHEAD_ATTENTION_LSTM.value:
             model = AttentionBiLSTMForecaster(
                 input_size=input_size,
                 hidden_size=config.hidden_size,
@@ -58,7 +58,7 @@ class LSTMModel(DeepLearningModel):
                 mlp_hidden_size=config.mlp_hidden_size,
             )
 
-        elif model_type == "multihead_attention_bilstm":
+        elif model_type == LSTMModelType.MULTIHEAD_ATTENTION_BILSTM.value:
             model = MultiHeadAttentionBiLSTMForecaster(
                 input_size=input_size,
                 hidden_size=config.hidden_size,
@@ -119,7 +119,6 @@ class LSTMModel(DeepLearningModel):
     
     def train_model(
         self,
-        patience=10,
         show_live_plots=False,
         title="Training History",
     ):
@@ -141,7 +140,7 @@ class LSTMModel(DeepLearningModel):
             self.model.train()
             running_train_loss = 0.0
 
-            for X_batch, y_batch, _, _, _ in train_loader:
+            for X_batch, y_batch, _, _, _, _ in train_loader:
                 X_batch = X_batch.to(self.device)
                 y_batch = y_batch[:, -1].to(self.device) # predicting only the last timestep in the forecast horizon
 
@@ -160,7 +159,7 @@ class LSTMModel(DeepLearningModel):
             running_val_loss = 0.0
 
             with torch.no_grad():
-                for X_batch, y_batch, _, _, _ in val_loader:
+                for X_batch, y_batch, _, _, _, _ in val_loader:
                     X_batch = X_batch.to(self.device)
                     y_batch = y_batch[:, -1].to(self.device) # predicting only the last timestep in the forecast horizon
 
@@ -193,7 +192,7 @@ class LSTMModel(DeepLearningModel):
                 f"Val Loss: {epoch_val_loss:.6f}"
             )
 
-            if epochs_no_improve >= patience:
+            if epochs_no_improve >= self.config.patience:
                 print(f"Early stopping triggered at epoch {epoch+1}")
                 break
 
@@ -236,11 +235,11 @@ class LSTMModel(DeepLearningModel):
         batch_nums = []
         batch_windows = []
         with torch.no_grad():
-            for i, (X_batch, y_batch, _, _, batch_time) in enumerate(test_loader):
+            for i, (X_batch, y_batch, _, _, x_batch_time, y_batch_time) in enumerate(test_loader):
                 X_batch = X_batch.to(self.device)
                 preds = self.model(X_batch).cpu().numpy()
                 batch_window = np.arange(y_batch[:, -1].numpy().shape[0])
-                ts = batch_time[:, -1].detach().cpu().numpy()
+                ts = y_batch_time[:, -1].detach().cpu().numpy()
                 current_batch_number = np.zeros(ts.shape)+i
                 y_pred_scaled.extend(preds)
                 y_true_scaled.extend(y_batch[:, -1].numpy())
@@ -282,8 +281,7 @@ class LSTMModel(DeepLearningModel):
         ) * 100
 
         eval_dict = {
-            "index": batch_nums.astype(int),
-            "horizon": batch_windows.astype(int),
+            "batch_number": batch_nums.astype(int),
             "timestamp": timestamps,
             "y_pred_scaled": y_pred_scaled,
             "y_true_scaled": y_true_scaled,
@@ -300,45 +298,14 @@ class LSTMModel(DeepLearningModel):
         results_path = os.path.join(NSWDataLoader.output_dir, f"LSTM_results")
         if not os.path.exists(results_path):
             os.makedirs(results_path)
-        results_df.to_csv(os.path.join(results_path, f"{self.config.task_id}_{self.config.model_type}_test_results.csv"), index=False)
-        print(f"Saved detailed rolling forecast results to {results_path}/{self.config.task_id}_{self.config.model_type}_test_results.csv")
+        results_df.to_csv(os.path.join(results_path, f"{self.config.task_id}_{self.config.model_type.value}_test_results.csv"), index=False)
+        print(f"Saved detailed rolling forecast results to {results_path}/{self.config.task_id}_{self.config.model_type.value}_test_results.csv")
         return eval_dict
-
-
-
-
-
-
-
-    # def plot_training_history(self, train_losses, val_losses, title="Training History"):
-    #     plt.figure(figsize=(8, 4))
-    #     plt.plot(train_losses, label="Train Loss")
-    #     plt.plot(val_losses, label="Val Loss")
-    #     plt.xlabel("Epoch")
-    #     plt.ylabel("MSE Loss (scaled)")
-    #     plt.title(title)
-    #     plt.legend()
-    #     plt.grid(True, alpha=0.3)
-    #     plt.tight_layout()
-    #     plt.show()
-
-
-    # def plot_predictions(self,y_true_real, y_pred_real, n_points=500, title="Forecast vs Actual"):
-    #     plt.figure(figsize=(12, 5))
-    #     plt.plot(y_true_real[:n_points], label="Actual")
-    #     plt.plot(y_pred_real[:n_points], label="Predicted")
-    #     plt.xlabel("Test Sample")
-    #     plt.ylabel("Demand")
-    #     plt.title(title)
-    #     plt.legend()
-    #     plt.grid(True, alpha=0.3)
-    #     plt.tight_layout()
-    #     plt.show()
-
+    
 
 class PatchTSTModel(DeepLearningModel):
     # This class is a wrapper around the official PatchTST implementation by the official authors but their data
-    def __init__(self, config: TransformersConfig):
+    def __init__(self, config: TransformersConfig, func: Callable[[pd.DataFrame,str ,list[str],list[int] | None, list[int] | None], pd.DataFrame] | None = None):
         self.variate = config.variate
         self.patch_len = config.patch_len
         self.stride = config.stride
@@ -348,15 +315,15 @@ class PatchTSTModel(DeepLearningModel):
         self.dim_ff = config.dim_ff
         self.dropout_ff = config.dropout_ff
         self.dropout_head_fc = config.dropout_head_fc
-        super().__init__(config)
+        super().__init__(config, func)
         self.config: TransformersConfig = config
         self.model = self._build_model().to(self.device)
    
     def _build_model(self):
         model_dict = {
-            'PatchTST': PatchTST,
-            'iTransformer': iTransformer,
-            'TimeXer': TimeXer
+            TransformerModelType.PATCHTST: PatchTST,
+            TransformerModelType.ITRANSFORMER: iTransformer,
+            TransformerModelType.TIMEXER: TimeXer
         }
         model = model_dict[self.config.model].Model(self.config).float()
         return model
@@ -387,10 +354,10 @@ class PatchTSTModel(DeepLearningModel):
         test_data, test_loader = self._get_data(flag='test' if test_mode else 'val')
 
         if test_mode:
-            results_path = os.path.join(NSWDataLoader.output_dir, f"{self.config.model}_results")
+            results_path = os.path.join(NSWDataLoader.output_dir, f"{self.config.model.value}_results")
             if not os.path.exists(results_path):
                 os.makedirs(results_path)
-            checkpoint_path = os.path.join(NSWDataLoader.output_dir, f"{self.config.model}_checkpoints")
+            checkpoint_path = os.path.join(NSWDataLoader.output_dir, f"{self.config.model.value}_checkpoints")
             if not os.path.exists(checkpoint_path):
                 os.makedirs(checkpoint_path)
             print('loading model')
@@ -403,13 +370,13 @@ class PatchTSTModel(DeepLearningModel):
         batch_windows = []
         self.model.eval()
         with torch.no_grad():
-            for i, (batch_x, batch_y, batch_x_mark, _, batch_time) in enumerate(test_loader):
+            for i, (batch_x, batch_y, batch_x_mark, _, x_batch_time, y_batch_time) in enumerate(test_loader):
                 batch_x = batch_x.float().to(self.device)
                 batch_y = batch_y.float()
                 batch_x_mark = batch_x_mark.float().to(self.device)
-                batch_window = (np.zeros((batch_time.shape[0],batch_time.shape[1])) + np.arange(batch_time.shape[1]))
+                batch_window = (np.zeros((y_batch_time.shape[0],y_batch_time.shape[1])) + np.arange(y_batch_time.shape[1]))
 
-                if 'Linear' in self.config.model or 'TST' in self.config.model:
+                if 'linear' in self.config.model.value.lower() or 'tst' in self.config.model.value.lower():
                         outputs = self.model(batch_x)
                 else:
                     if self.config.output_attention:
@@ -421,12 +388,12 @@ class PatchTSTModel(DeepLearningModel):
                 f_dim = -1 if self.config.variate == 'MS' else 0
                 outputs = outputs[:, -self.config.forecast_horizon:, f_dim:]
                 batch_y = batch_y[:, -self.config.forecast_horizon:, f_dim:]
-                batch_time = batch_time[:, -self.config.forecast_horizon:]
+                y_batch_time = y_batch_time[:, -self.config.forecast_horizon:]
                 batch_window = batch_window[:, -self.config.forecast_horizon:]
                 outputs = outputs.detach().cpu()
                 batch_y = batch_y.detach().cpu()
                 
-                ts = batch_time.detach().cpu().numpy()
+                ts = y_batch_time.detach().cpu().numpy()
                 current_batch_number = np.zeros(ts.shape)+i
                 batch_nums.append(current_batch_number)
                 
@@ -478,10 +445,10 @@ class PatchTSTModel(DeepLearningModel):
     def train_model(self):
         train_data, train_loader = self._get_data(flag='train')
 
-        checkpoint_path = os.path.join(NSWDataLoader.output_dir, f"{self.config.model}_checkpoints")
+        checkpoint_path = os.path.join(NSWDataLoader.output_dir, f"{self.config.model.value}_checkpoints")
         if not os.path.exists(checkpoint_path):
             os.makedirs(checkpoint_path)
-        results_path = os.path.join(NSWDataLoader.output_dir, f"{self.config.model}_results")
+        results_path = os.path.join(NSWDataLoader.output_dir, f"{self.config.model.value}_results")
         if not os.path.exists(results_path):
             os.makedirs(results_path)
 
@@ -514,7 +481,7 @@ class PatchTSTModel(DeepLearningModel):
 
             self.model.train()
             epoch_time = time()
-            for i, (batch_x, batch_y, batch_x_mark, batch_y_mark, _) in enumerate(train_loader):
+            for i, (batch_x, batch_y, batch_x_mark, batch_y_mark, _, _) in enumerate(train_loader):
                 iter_count += 1
                 model_optim.zero_grad()
                 batch_x = batch_x.float().to(self.device)
@@ -523,7 +490,7 @@ class PatchTSTModel(DeepLearningModel):
                 batch_x_mark = batch_x_mark.float().to(self.device)
                 batch_y_mark = batch_y_mark.float().to(self.device)
 
-                if 'Linear' in self.config.model or 'TST' in self.config.model:
+                if 'linear' in self.config.model.value.lower() or 'tst' in self.config.model.value.lower():
                         outputs = self.model(batch_x)
                 else:
                     if self.config.output_attention:
@@ -555,7 +522,7 @@ class PatchTSTModel(DeepLearningModel):
             cost_time = time() - epoch_time
             print("Epoch: {} cost time: {}".format(epoch + 1, cost_time))
             train_loss = np.average(train_loss)
-            _, _, _, _, mae_val, rmse_val, mse_val = self.evaluate_model()
+            _, _, _, _, _, mae_val, rmse_val, mse_val = self.evaluate_model()
             progress_log['model_name'].append(self.config.task_id)
             progress_log['lookback_window'].append(self.config.lookback_window)
             progress_log['epoch'].append(epoch + 1)
@@ -583,8 +550,8 @@ class PatchTSTModel(DeepLearningModel):
 
 
 class SarimaxModel(BaseModel):
-    def __init__(self, config: SARIMAXConfig):
-        super().__init__(config)
+    def __init__(self, config: SARIMAXConfig, func: Callable[[pd.DataFrame,str ,list[str],list[int] | None, list[int] | None], pd.DataFrame] | None = None):
+        super().__init__(config, func)
         self.p = config.p
         self.d = config.d
         self.q = config.q
@@ -652,7 +619,7 @@ class SarimaxModel(BaseModel):
                 actuals = np.exp(actuals)
             # Store predictions and actuals
             all_predictions.extend(forecast.values)
-            all_actuals.extend(actuals.values)
+            all_actuals.extend(actuals)
             all_timestamps.extend(test_df.index[i : i + self.config.forecast_horizon].tolist())
             all_origins.extend([i // self.config.val_step_size] * self.config.forecast_horizon)
             

@@ -1,8 +1,8 @@
 import torch
 import random
 import numpy as np
-from nsw_data_loader.nsw_data_loader import NSWDataLoader
-from model_configs import Config, DeepLearningConfig
+from NSWData.NSWDataLoader import NSWDataLoader
+from ModelFiles.ModelConfigs import Config, DeepLearningConfig
 from typing import Callable
 import pandas as pd
 
@@ -19,6 +19,7 @@ class BaseModel:
         self.test_data = func(test_data, config.target_col, config.feature_lag_cols, config.demand_lags, config.feature_lags) if func else test_data
         if self.config.seed is not None:
             self.set_seed(self.config.seed)
+            print(f"Set random seed to {self.config.seed}")
 
     def set_seed(self, seed: int = 42, deterministic: bool = True):
         random.seed(seed)

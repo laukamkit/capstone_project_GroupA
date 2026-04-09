@@ -1,6 +1,11 @@
 from dataclasses import dataclass, field
+from ModelFiles.ModelEnums import *
 
-#__all__ = ["Config", "PatchTSTConfig", "SARIMAXConfig", "LSTMConfig"]
+__all__ = ["TransformersConfig", "SARIMAXConfig", "LSTMConfig", "HORIZONS", "CONTEXT_LENGTHS", "SEEDS"]
+
+HORIZONS = [48, 336, 720]
+CONTEXT_LENGTHS = [144, 336, 720]
+SEEDS = [31415, 27182, 14142, 17320, 22360, 57721, 66987, 11235, 98765, 43210]
 
 @dataclass
 class Config:
@@ -27,6 +32,39 @@ class Config:
         return self.feature_cols + lag_feature_cols
 
 @dataclass(kw_only=True)
+class SARIMAXConfig(Config):
+    # If any of the number of elements in these lists is greater than 1, then grid search will be performed
+    p: list[int] = field(default_factory=list)
+    d: list[int] = field(default_factory=list)
+    q: list[int] = field(default_factory=list)
+    P: list[int] = field(default_factory=list)
+    D: list[int] = field(default_factory=list)
+    Q: list[int] = field(default_factory=list)
+    seasonality_period: int
+    enforce_stationarity: bool
+    enforce_invertibility: bool
+    val_step_size: int = 48 # every 1 day
+    @property
+    def config_params_to_results(self) -> dict:
+        return {
+            "model_type": "SARIMAX",
+            "p": self.p,
+            "d": self.d,
+            "q": self.q,
+            "P": self.P,
+            "D": self.D,
+            "Q": self.Q,
+            "seasonality_period": self.seasonality_period,
+            "enforce_stationarity": self.enforce_stationarity,
+            "enforce_invertibility": self.enforce_invertibility,
+            "lookback": self.lookback_window,
+            "horizon": self.forecast_horizon,
+            "demand_lags": self.demand_lags,
+            "feature_lags": self.feature_lags,
+            "val_step_size": self.val_step_size,
+        }
+    
+@dataclass(kw_only=True)
 class DeepLearningConfig(Config):
     shuffle_flag: bool = True
     training_epochs: int = 10
@@ -44,14 +82,13 @@ class DeepLearningConfig(Config):
 
 @dataclass(kw_only=True)
 class TransformersConfig(DeepLearningConfig):
-    model:str
+    model: TransformerModelType = TransformerModelType.PATCHTST
     variate: str = 'MS' # 'S' for single variate, 'MS' for multiple predictors but single output, 'M' for multiple predictors and multiple outputs
     patch_len: int = 16
     stride: int = 1
     d_model: int = 128
     num_encoder_layers: int = 3
     dim_ff: int = 256
-    dropout: float = 0.1 # dropout for residual connections. Used before the encoder layer but after the input embedding + positional encoding, used inside the encoder layer after the multihead attention and after the fully connected layer of each encoder block.
     dropout_head_fc: float = 0.1 # dropout for the fully connected layers in the head (after the transformer backbone)
     output_attention: bool = False
     lradj: str = 'TST' # options are 'type1', 'type2', 'type3', 'TST', 'constant', '1', '2', '3', '4', '5', '6'. See tools.py for details on each type of learning rate adjustment strategy.
@@ -71,23 +108,29 @@ class TransformersConfig(DeepLearningConfig):
     def c_out(self) -> int:
         return 1
 
-@dataclass(kw_only=True)
-class SARIMAXConfig(Config):
-    # If any of the number of elements in these lists is greater than 1, then grid search will be performed
-    p: list[int] = field(default_factory=list)
-    d: list[int] = field(default_factory=list)
-    q: list[int] = field(default_factory=list)
-    P: list[int] = field(default_factory=list)
-    D: list[int] = field(default_factory=list)
-    Q: list[int] = field(default_factory=list)
-    seasonality_period: int
-    enforce_stationarity: bool
-    enforce_invertibility: bool
-    val_step_size: int = 48 # every 1 day
+    @property
+    def config_params_to_results(self) -> dict:
+        return {
+            "model_type": self.model.value,
+            "variate": self.variate,
+            "patch_len": self.patch_len,
+            "stride": self.stride,
+            "d_model": self.d_model,
+            "num_encoder_layers": self.num_encoder_layers,
+            "dim_ff": self.dim_ff,
+            "dropout": self.dropout,
+            "dropout_head_fc": self.dropout_head_fc,
+            "lookback": self.lookback_window,
+            "horizon": self.forecast_horizon,
+            "demand_lags": self.demand_lags,
+            "feature_lags": self.feature_lags,
+        }
+    
+
 
 @dataclass(kw_only=True)
-class LSTMBaseConfig(DeepLearningConfig):
-    model_type: str = "multihead_attention_bilstm"
+class LSTMConfig(DeepLearningConfig):
+    model_type: LSTMModelType = LSTMModelType.MULTIHEAD_ATTENTION_BILSTM
     hidden_size: int = 64
     num_layers: int = 2
     # dropout: float = 0.4
@@ -108,3 +151,21 @@ class LSTMBaseConfig(DeepLearningConfig):
     scheduler_patience: int = 5
     scheduler_step_size: int = 10
     scheduler_gamma: float = 0.5
+
+    @property
+    def config_params_to_results(self) -> dict:
+        return {
+            "model_type": self.model_type.value,
+            "hidden_size": self.hidden_size,
+            "num_layers": self.num_layers,
+            "dropout": self.dropout,
+            "learning_rate": self.learning_rate,
+            "use_mlp_head": self.use_mlp_head,
+            "mlp_hidden_size": self.mlp_hidden_size,
+            "num_attention_heads": self.num_attention_heads,
+            "lookback": self.lookback_window,
+            "horizon": self.forecast_horizon,
+            "demand_lags": self.demand_lags,
+            "feature_lags": self.feature_lags,
+        }
+

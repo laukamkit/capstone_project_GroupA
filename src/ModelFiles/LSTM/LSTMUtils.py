@@ -1,23 +1,13 @@
-import math
-
-import torch
-from PatchTST_supervised.models import PatchTST, TimeXer
-from PatchTST_supervised.models import iTransformer
-from PatchTST_supervised.utils.tools import EarlyStopping, adjust_learning_rate, test_params_flop
-from PatchTST_supervised.utils.metrics import metric
-import torch.nn as nn
-from GroupAModels import LSTMModel, PatchTSTModel, SarimaxModel
-from nsw_data_loader.nsw_data_loader import NSWDataLoader
-from model_configs import LSTMBaseConfig, SARIMAXConfig, TransformersConfig
 import pandas as pd
+from ModelFiles.ModelConfigs import LSTMConfig
+from NSWData.NSWDataLoader import NSWDataLoader
+from ModelFiles.GroupAModels import LSTMModel
 import numpy as np
-from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
-import os
-from time import time
+import os, torch, math, json
 from copy import deepcopy
 from itertools import product
-import json
-from model_configs import LSTMBaseConfig
+
+from ModelFiles.ModelEnums import LSTMModelType
 
 def add_lag_features(
     df: pd.DataFrame,
@@ -31,7 +21,7 @@ def add_lag_features(
     feature_lags = feature_lags or []
 
     for lag in demand_lags:
-        df[f"demand_lag_{lag}"] = df[target_col].shift(lag)
+        df[f"{target_col}_lag_{lag}"] = df[target_col].shift(lag)
 
     for feature_col in feature_cols:
         if feature_col in df.columns:
@@ -41,12 +31,12 @@ def add_lag_features(
     df = df.dropna().reset_index()
     return df
 
-def _make_config_name(config: LSTMBaseConfig):
+def make_config_name(config: LSTMConfig):
     demand_lags_str = "-".join(map(str, config.demand_lags if config.demand_lags else [])) if config.demand_lags else "none"
     temp_lags_str = "-".join(map(str, config.feature_lags if config.feature_lags else [])) if config.feature_lags else "none"
 
     name = (
-        f"{config.model_type}"
+        f"{config.model_type.value}"
         f"_lb{config.lookback_window}"
         f"_hs{config.hidden_size}"
         f"_nl{config.num_layers}"
@@ -62,7 +52,7 @@ def _make_config_name(config: LSTMBaseConfig):
 
     return name
 
-def run_experiment(config: LSTMBaseConfig, experiment_name=None, save_best_model=True, show_live_plots=False):
+def run_experiment(config: LSTMConfig, experiment_name=None, save_best_model=True, show_live_plots=False):
     """
     Atomic run function.
     Assumes the following already exist earlier in the notebook:
@@ -80,7 +70,7 @@ def run_experiment(config: LSTMBaseConfig, experiment_name=None, save_best_model
     - nn (torch.nn)
     """
     lstm_model = LSTMModel(config, add_lag_features)
-    experiment_name = experiment_name or _make_config_name(config)
+    experiment_name = experiment_name or make_config_name(config)
 
     print("\n" + "=" * 90)
     print(f"Running experiment: {experiment_name}")
@@ -88,10 +78,6 @@ def run_experiment(config: LSTMBaseConfig, experiment_name=None, save_best_model
     for k, v in config.__dict__.items():
         print(f"{k}: {v}")
 
-    #set_seed(config.seed)
-    #print(f"Using run seed: {run_seed}")
-
-    # data_dict = load_data(config)
     train_data, train_loader = lstm_model._get_data("train") 
     val_data, val_loader = lstm_model._get_data("val")
     test_data, test_loader = lstm_model._get_data("test")
@@ -104,7 +90,7 @@ def run_experiment(config: LSTMBaseConfig, experiment_name=None, save_best_model
     # 1. Feature names
     if config.all_feature_cols is not None:
         print("\nFeature names:")
-        for i, f in enumerate(config.all_feature_cols):
+        for i, f in enumerate([config.target_col] + config.all_feature_cols):
             print(f"{i}: {f}")
     else:
         print("\nNo feature list found in config.feature_cols.")
@@ -113,14 +99,6 @@ def run_experiment(config: LSTMBaseConfig, experiment_name=None, save_best_model
     print("\nSequence shape (lookback, num_features):", next(iter(train_loader))[0][0].shape)
 
     # 3. Convert to DataFrame for readability
-    # if config.feature_cols is not None:
-    #     df_seq = pd.DataFrame(train_x[0], columns=config.feature_cols)
-    #     print("\nFirst 5 timesteps:")
-    #     print(df_seq.head())
-
-    #     print("\nLast 5 timesteps:")
-    #     print(df_seq.tail())
-    #else:
     print("\nRaw sequence values (first 5 timesteps):")
     print(next(iter(train_loader))[0][0][:5])
 
@@ -142,21 +120,15 @@ def run_experiment(config: LSTMBaseConfig, experiment_name=None, save_best_model
     print("X_val:  ", val_data.shape()[0],   "| y_val:  ", val_data.shape()[1])
     print("X_test: ", test_data.shape()[0],  "| y_test: ", test_data.shape()[1])
 
-    #model = build_model(config, input_size=seq_dict["X_train"].shape[2])
-
     # Quick debug checks
     for name, param in lstm_model.model.named_parameters():
         print(f"[DEBUG] First parameter tensor: {name}")
         print("[DEBUG] First 5 values:", param.detach().view(-1)[:5].cpu().numpy())
         break
 
-    #xb0, yb0 = next(iter(seq_dict["train_loader"]))
     print("[DEBUG] First 5 y values from first train batch:", next(iter(train_loader))[1][0][:5])
 
-
-
     train_output = lstm_model.train_model(
-        patience=config.patience,
         show_live_plots=show_live_plots,
     )
 
@@ -215,7 +187,7 @@ def run_experiment(config: LSTMBaseConfig, experiment_name=None, save_best_model
         "config": deepcopy(config),
         "result": result,
         "model_class": lstm_model.model.__class__.__name__,
-        "input_size": train_x.shape[2],
+        "input_size": train_data.shape()[0][1],
         "train_losses": train_losses,
         "val_losses": val_losses,
         "best_state": deepcopy(best_state),
@@ -223,10 +195,9 @@ def run_experiment(config: LSTMBaseConfig, experiment_name=None, save_best_model
         "best_val_loss": best_val_loss,
         "eval_dict": eval_dict,
     }
-
     return artifact
 
-def build_config_list(base_config:LSTMBaseConfig, param_grid=None):
+def build_config_list(base_config:LSTMConfig, param_grid=None):
     """
     Builds a list of config dictionaries from a base config and optional param grid.
     If param_grid is None or empty, returns [base_config].
@@ -273,7 +244,7 @@ def run_experiment_suite(
     print(f"Total runs: {total_runs}")
 
     for cfg_idx, cfg in enumerate(config_list, start=1):
-        config_name = _make_config_name(cfg)
+        config_name = make_config_name(cfg)
         print(f"\n{'='*100}")
         print(f"[CONFIG {cfg_idx}/{len(config_list)}] {config_name}")
         print(f"{'='*100}")
@@ -440,81 +411,15 @@ def summarise_runs(runs_df):
 
     return summary_df
 
-# def live_plot_losses(self, train_losses, val_losses, title="Training History"):
-#     plt.figure(figsize=(8, 4))
-#     plt.plot(train_losses, label="Train Loss")
-#     plt.plot(val_losses, label="Val Loss")
-#     plt.xlabel("Epoch")
-#     plt.ylabel("MSE Loss")
-#     plt.title(title)
-#     plt.legend()
-#     plt.grid(True, alpha=0.3)
-#     plt.tight_layout()
-#     plt.show()   
-
 if __name__ == "__main__":
-    # sarimax_config = SARIMAXConfig(
-    #     task_id="sarimax_test",
-    #     forecast_horizon=48,
-    #     lookback_window=1440, # For SARIMAX, this is the number of most recent time steps to use for training.
-    #     target_col='LOG_TOTALDEMAND',
-    #     used_log_target=True,
-    #     feature_cols=['demand_1_week_ago', 'demand_1_year_ago', 'TEMPERATURE','TEMP_SQUARED', 'IS_WEEKEND'],
-    #     scale=True,
-    #     p=[3],#2, 3, 4],
-    #     d=[0],
-    #     q=[0],
-    #     P=[1],
-    #     D=[1],
-    #     Q=[1],
-    #     seasonality_period=48,
-    #     enforce_stationarity=True,
-    #     enforce_invertibility=True
-    # )
-    # sarimax_model = SarimaxModel(sarimax_config)
-    # sarimax_model.train_model()
-    # all_origins, all_timestamps, all_actuals, all_predictions, mae, rmse, mse = sarimax_model.evaluate_model(None, test_mode=True)
-
-    # patchtst_config = TransformersConfig(
-    #     task_id="patchtst_test",
-    #     model="PatchTST",
-    #     forecast_horizon=48,
-    #     lookback_window=336,
-    #     used_log_target=True,
-    #     target_col='LOG_TOTALDEMAND',
-    #     feature_cols=['TEMPERATURE', 'TEMP_SQUARED', 'IS_WEEKEND', 'demand_1_year_ago'],
-    #     scale=True,
-    #     date_col='DATETIME',
-    #     variate='MS',
-    #     patch_len=16,
-    #     stride=8,
-    #     d_model=128,
-    #     num_attention_heads=4,
-    #     num_encoder_layers=3,
-    #     dim_ff=256,
-    #     dropout=0.1,
-    #     dropout_head_fc=0.1,
-    #     use_gpu=True,
-    #     time_encoding='timeF',
-    #     shuffle_flag=True,
-    #     training_epochs=1,
-    #     batch_size=64,
-    #     learning_rate=0.0001,
-    #     output_attention=False,
-    #     lradj='TST',
-    #     patience=10,
-    # )
-    # patch_tst_model = PatchTSTModel(patchtst_config)
-    # patch_tst_model.train_model()
-    # patch_tst_model.evaluate_model(test_mode=1)
-
     RUN_SINGLE = True
     RUN_SWEEP = False
     RUN_REPEATED = False
-    SEED = 42
-    BASE_CONFIG = LSTMBaseConfig(
+    SEED = 31415
+
+    BASE_CONFIG = LSTMConfig(
         task_id= "sweep_run_test",
-        model_type= "multihead_attention_bilstm",
+        model_type= LSTMModelType.MULTIHEAD_ATTENTION_BILSTM,
         hidden_size= 64,
         num_layers= 2,
         dropout= 0.4,
@@ -588,14 +493,7 @@ if __name__ == "__main__":
 
         summary_df = summarise_runs(runs_df)
         summary_df.to_csv(os.path.join(summary_path, "sweep_run_summary.csv"), index=False)
-        
-        
-        
-        
-        
-        
-        
-        
+
         # print("\nRaw run results:")
         # display(runs_df.head())
 
@@ -607,49 +505,45 @@ if __name__ == "__main__":
         # if best_artifact["config"]["model_type"] in ["attention_bilstm", "multihead_attention_bilstm"]:
         #     plot_attention_for_sample(best_artifact, sample_index=0)
 
-    # if RUN_REPEATED:
-    #     # REPEATED EXPERIMENTS
+    if RUN_REPEATED:
+        # REPEATED EXPERIMENTS
 
-    #     REPEAT_N = 5
-    #     SAVE_DIR = "repeated_experiment_outputs"
+        REPEAT_N = 5
+        SAVE_DIR = "repeated_experiment_outputs"
 
-    #     PARAM_GRID = {
-    #         "lookback": [168, 336, 672],
-    #         "horizon": [336],
-    #         "model_type": ["lstm", "bilstm", "multihead_attention_bilstm"],
-    #         "hidden_size": [64],
-    #         "num_layers": [2],
-    #         "dropout": [0.1],
-    #         "learning_rate": [5e-5],
-    #     }
+        PARAM_GRID = {
+            "lookback": [168, 336, 672],
+            "horizon": [336],
+            "model_type": ["lstm", "bilstm", "multihead_attention_bilstm"],
+            "hidden_size": [64],
+            "num_layers": [2],
+            "dropout": [0.1],
+            "learning_rate": [5e-5],
+        }
 
-    #     runs_df, all_artifacts = run_experiment_suite(
-    #             base_config=BASE_CONFIG,
-    #             param_grid=PARAM_GRID,
-    #             n_repeats=REPEAT_N,
-    #             base_seed=1000,
-    #             save_dir=SAVE_DIR,
-    #             save_best_model=False,
-    #             show_live_plots=False,
-    #     )
+        runs_df, all_artifacts = run_experiment_suite(
+                base_config=BASE_CONFIG,
+                param_grid=PARAM_GRID,
+                n_repeats=REPEAT_N,
+                base_seed=1000,
+                save_results=1,
+                save_best_model=False,
+                show_live_plots=False,
+        )
 
-    #     summary_df = summarise_runs(runs_df)
+        summary_df = summarise_runs(runs_df)
 
-    #     runs_df.to_csv(os.path.join(SAVE_DIR, "all_runs_raw.csv"), index=False)
-    #     summary_df.to_csv(os.path.join(SAVE_DIR, "summary_stats.csv"), index=False)
+        runs_df.to_csv(os.path.join(SAVE_DIR, "all_runs_raw.csv"), index=False)
+        summary_df.to_csv(os.path.join(SAVE_DIR, "summary_stats.csv"), index=False)
 
-    #     print("\nRaw run results:")
-    #     display(runs_df.head())
+        # print("\nRaw run results:")
+        # display(runs_df.head())
 
-    #     print("\nSummary results:")
-    #     display(summary_df)
+        # print("\nSummary results:")
+        # display(summary_df)
 
-    #     plot_metric_distribution_with_summary(
-    #         runs_df,
-    #         metric="test_rmse",
-    #         title=f"Test RMSE Distribution ({len(runs_df)} Runs)"
-    #     )
-
-
-
-    pass
+        # plot_metric_distribution_with_summary(
+        #     runs_df,
+        #     metric="test_rmse",
+        #     title=f"Test RMSE Distribution ({len(runs_df)} Runs)"
+        # )

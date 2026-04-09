@@ -1,8 +1,8 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from PatchTST_supervised.layers.SelfAttention_Family import FullAttention, AttentionLayer
-from PatchTST_supervised.layers.Embed import DataEmbedding_inverted, PositionalEmbedding
+from ModelFiles.PatchTST_supervised.layers.SelfAttention_Family import FullAttention, AttentionLayer
+from ModelFiles.PatchTST_supervised.layers.Embed import DataEmbedding_inverted, PositionalEmbedding
 import numpy as np
 
 
