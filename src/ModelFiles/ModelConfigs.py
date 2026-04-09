@@ -15,21 +15,31 @@ class Config:
     date_col: str = 'DATETIME'
     target_col: str = 'TOTALDEMAND'
     used_log_target: bool = False
+    target_lags: list[int] = field(default_factory=list)
+    target_mas: list[int] = field(default_factory=list)
     feature_cols: list[str] = field(default_factory=list)
-    feature_lag_cols: list[str] = field(default_factory=list)
-    demand_lags: list[int] = field(default_factory=list)
-    feature_lags: list[int] = field(default_factory=list)
+    feature_lag_cols: list[tuple[str, int]] = field(default_factory=list)
     scale: bool = True # if scale, then make sure to set inverse to True as well
     seed: int | None = None
+    eval_step_size: int = 48
+    save_results: bool = False
     @property
     def all_feature_cols(self) -> list[str]:
         lag_feature_cols = []
-        for lag in self.demand_lags:
+        for lag in self.target_lags:
             lag_feature_cols.append(f"{self.target_col}_lag_{lag}")
-        for feature in self.feature_lag_cols:
-            for lag in self.feature_lags:
-                lag_feature_cols.append(f"{feature}_lag_{lag}")
+        for feature, lag in self.feature_lag_cols:
+            lag_feature_cols.append(f"{feature}_lag_{lag}")
+        for ma in self.target_mas:
+            lag_feature_cols.append(f"{self.target_col}_ma_{ma}")
         return self.feature_cols + lag_feature_cols
+
+@dataclass(kw_only=True)
+class GradientBoostingConfig(Config):
+    n_estimators: int = 100
+    learning_rate: float = 0.1
+    max_depth: int = 3
+    verbose: int = 0
 
 @dataclass(kw_only=True)
 class SARIMAXConfig(Config):
@@ -43,26 +53,7 @@ class SARIMAXConfig(Config):
     seasonality_period: int
     enforce_stationarity: bool
     enforce_invertibility: bool
-    val_step_size: int = 48 # every 1 day
-    @property
-    def config_params_to_results(self) -> dict:
-        return {
-            "model_type": "SARIMAX",
-            "p": self.p,
-            "d": self.d,
-            "q": self.q,
-            "P": self.P,
-            "D": self.D,
-            "Q": self.Q,
-            "seasonality_period": self.seasonality_period,
-            "enforce_stationarity": self.enforce_stationarity,
-            "enforce_invertibility": self.enforce_invertibility,
-            "lookback": self.lookback_window,
-            "horizon": self.forecast_horizon,
-            "demand_lags": self.demand_lags,
-            "feature_lags": self.feature_lags,
-            "val_step_size": self.val_step_size,
-        }
+    eval_step_size: int = 48 # every 1 day
     
 @dataclass(kw_only=True)
 class DeepLearningConfig(Config):
@@ -107,24 +98,6 @@ class TransformersConfig(DeepLearningConfig):
     @property
     def c_out(self) -> int:
         return 1
-
-    @property
-    def config_params_to_results(self) -> dict:
-        return {
-            "model_type": self.model.value,
-            "variate": self.variate,
-            "patch_len": self.patch_len,
-            "stride": self.stride,
-            "d_model": self.d_model,
-            "num_encoder_layers": self.num_encoder_layers,
-            "dim_ff": self.dim_ff,
-            "dropout": self.dropout,
-            "dropout_head_fc": self.dropout_head_fc,
-            "lookback": self.lookback_window,
-            "horizon": self.forecast_horizon,
-            "demand_lags": self.demand_lags,
-            "feature_lags": self.feature_lags,
-        }
     
 
 
@@ -133,17 +106,8 @@ class LSTMConfig(DeepLearningConfig):
     model_type: LSTMModelType = LSTMModelType.MULTIHEAD_ATTENTION_BILSTM
     hidden_size: int = 64
     num_layers: int = 2
-    # dropout: float = 0.4
-    # learning_rate: float = 5e-5
-    # batch_size: int = 64
-    # epochs: int = 100
-    # patience: int = 8
     use_mlp_head: bool = True
     mlp_hidden_size: int = 64
-    # target_col: str = "TOTALDEMAND"
-    # temp_col: str = "TEMPERATURE"
-    # lookback: int = 168*5
-    # horizon: int = 168
     weight_decay: float = 1e-4
     scheduler: str | None = None
     optimizer: str = "adam"
@@ -165,7 +129,7 @@ class LSTMConfig(DeepLearningConfig):
             "num_attention_heads": self.num_attention_heads,
             "lookback": self.lookback_window,
             "horizon": self.forecast_horizon,
-            "demand_lags": self.demand_lags,
-            "feature_lags": self.feature_lags,
+            "target_lags": self.target_lags,
+            "feature_lags": self.feature_lag_cols,
         }
 

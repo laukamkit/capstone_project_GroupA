@@ -7,7 +7,7 @@ import numpy as np
 from sklearn.preprocessing import StandardScaler
 from torch.utils.data import DataLoader
 from NSWData.NSWDataSet import LSTMDataSet, TransformersDataSet
-from ModelFiles.ModelConfigs import Config, LSTMConfig, TransformersConfig
+from ModelFiles.ModelConfigs import LSTMConfig, TransformersConfig
 
 class NSWDataLoader:
     output_dir = ''

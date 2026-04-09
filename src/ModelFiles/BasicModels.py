@@ -7,16 +7,17 @@ from typing import Callable
 import pandas as pd
 
 class BaseModel:
-    def __init__(self, config: Config, func: Callable[[pd.DataFrame,str ,list[str],list[int] | None, list[int] | None], pd.DataFrame] | None = None):
+    def __init__(self, config: Config, func: Callable[[pd.DataFrame, str, list[int], list[int],list[tuple[str,int]]], pd.DataFrame] | None = None):
         self.config: Config = config
         self.nsw_data_loader = NSWDataLoader()
         self.train, self.validation, self.test, self.train_scaled, self.val_scaled, self.test_scaled, self.scaler = self.nsw_data_loader.load_data()
         training_data = self.train_scaled if self.config.scale else self.train
         validation_data = self.val_scaled if self.config.scale else self.validation
         test_data = self.test_scaled if self.config.scale else self.test
-        self.training_data = func(training_data, config.target_col, config.feature_lag_cols, config.demand_lags, config.feature_lags) if func else training_data
-        self.validation_data = func(validation_data, config.target_col, config.feature_lag_cols, config.demand_lags, config.feature_lags) if func else validation_data
-        self.test_data = func(test_data, config.target_col, config.feature_lag_cols, config.demand_lags, config.feature_lags) if func else test_data
+        self.training_data = func(training_data, config.target_col, config.target_lags, config.target_mas, config.feature_lag_cols) if func else training_data
+        self.validation_data = func(validation_data, config.target_col, config.target_lags, config.target_mas, config.feature_lag_cols) if func else validation_data
+        self.test_data = func(test_data, config.target_col, config.target_lags, config.target_mas, config.feature_lag_cols) if func else test_data
+
         if self.config.seed is not None:
             self.set_seed(self.config.seed)
             print(f"Set random seed to {self.config.seed}")
@@ -33,6 +34,10 @@ class BaseModel:
             torch.backends.cudnn.deterministic = True
             torch.backends.cudnn.benchmark = False
 
+    def _get_data(self, flag):
+            data_set, data_loader = self.nsw_data_loader.data_provider(self.training_data, self.validation_data, self.test_data, self.config, flag)
+            return data_set, data_loader
+    
     # def _compute_inverse_scaling(self, shape, pred, true):
     #     pos = self.nsw_data_loader.scaler.feature_names_in_.tolist().index(self.config.target_col)
     #     mean = self.nsw_data_loader.scaler.mean_[pos]
@@ -68,11 +73,14 @@ class BaseModel:
 
 
 class DeepLearningModel(BaseModel):
-    def __init__(self, config: DeepLearningConfig, func: Callable[[pd.DataFrame,str ,list[str],list[int] | None, list[int] | None], pd.DataFrame] | None = None):
+    def __init__(self, config: DeepLearningConfig, func: Callable[[pd.DataFrame, str, list[int], list[int], list[tuple[str, int]]], pd.DataFrame] | None = None):
         super().__init__(config, func)
         self.config: DeepLearningConfig = config
         self.device = self._acquire_device()
-
+        self.training_data = self.training_data.dropna().reset_index()
+        self.validation_data = self.validation_data.dropna().reset_index()
+        self.test_data = self.test_data.dropna().reset_index()
+        
     def _acquire_device(self):
         # taken from official repository:
         if self.config.use_gpu:
@@ -82,7 +90,3 @@ class DeepLearningModel(BaseModel):
             device = torch.device('cpu')
             print('Use CPU')
         return device
-    
-    def _get_data(self, flag):
-            data_set, data_loader = self.nsw_data_loader.data_provider(self.training_data, self.validation_data, self.test_data, self.config, flag)
-            return data_set, data_loader

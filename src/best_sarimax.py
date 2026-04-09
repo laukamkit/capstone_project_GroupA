@@ -4,9 +4,9 @@ from ModelFiles.ModelPlots import *
 
 for horizon in HORIZONS:
     for context_length in CONTEXT_LENGTHS:
-        for seed in SEEDS:
+        # for seed in SEEDS: # For SARIMAX, we are not doing multiple seeds since it is a deterministic model. We can uncomment this loop if we want to do multiple runs with different random seeds for any reason (e.g., if we want to add some randomness in the future).
             sarimax_config = SARIMAXConfig(
-                task_id=f"sarimax_run_h{horizon}_c{context_length}_s{seed}",
+                task_id=f"sarimax_run_h{horizon}_c{context_length}",
                 forecast_horizon=horizon,
                 lookback_window=context_length, # For SARIMAX, this is the number of most recent time steps to use for training.
                 target_col='LOG_TOTALDEMAND',
@@ -23,8 +23,8 @@ for horizon in HORIZONS:
                 seasonality_period=48,
                 enforce_stationarity=True,
                 enforce_invertibility=True,
-                seed=seed,
-                val_step_size=48, # For SARIMAX, this is the step size to use when evaluating against validation or test set.
+                seed=None,
+                eval_step_size=48, # For SARIMAX, this is the step size to use when evaluating against validation or test set.
             )
             sarimax_model = SarimaxModel(sarimax_config)
             sarimax_model.train_model()

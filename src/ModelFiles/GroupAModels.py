@@ -5,19 +5,140 @@ from ModelFiles.PatchTST_supervised.utils.tools import EarlyStopping, adjust_lea
 from ModelFiles.PatchTST_supervised.utils.metrics import metric
 from ModelFiles.LSTM.models import AttentionBiLSTMForecaster, MultiHeadAttentionBiLSTMForecaster, SequenceForecaster
 from NSWData.NSWDataLoader import NSWDataLoader
-from ModelFiles.ModelConfigs import TransformersConfig, SARIMAXConfig, LSTMConfig
+from ModelFiles.ModelConfigs import GradientBoostingConfig, TransformersConfig, SARIMAXConfig, LSTMConfig
 from ModelFiles.ModelEnums import *
 from ModelFiles.BasicModels import BaseModel, DeepLearningModel
 from statsmodels.tsa.statespace.sarimax import SARIMAX, SARIMAXResultsWrapper
+from sklearn.ensemble import GradientBoostingRegressor
 from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 from time import time
 from copy import deepcopy
 from torch import optim
 from torch.optim import lr_scheduler
 from typing import Callable
+import pickle
+
+
+class GradientBoostingModel(BaseModel):
+    def __init__(self, config: GradientBoostingConfig, func: Callable[[pd.DataFrame, str, list[int], list[int], list[tuple[str, int]]], pd.DataFrame] | None = None):
+        super().__init__(config, func)
+        self.config: GradientBoostingConfig = config
+        self.model = GradientBoostingRegressor(
+            n_estimators=self.config.n_estimators,
+            learning_rate=self.config.learning_rate,
+            max_depth=self.config.max_depth,
+            random_state=self.config.seed,
+            verbose=self.config.verbose
+        )
+
+    def train_model(self):
+        x_train = self.training_data[self.config.all_feature_cols].copy()
+        y_train = self.training_data[self.config.target_col].copy()
+        self.model.fit(x_train, y_train)
+        _, _, rmse, mae = self.evaluate_model(None, test_mode=0)
+        progress_log_df = pd.DataFrame({
+            "task_id": [self.config.task_id],
+            "model_type": ["GradientBoosting"],
+            "rmse": [rmse],
+            "mae": [mae]
+        })
+        os.makedirs(os.path.join(self.nsw_data_loader.output_dir, "gradient_boosting_models"), exist_ok=True)
+        with open(os.path.join(self.nsw_data_loader.output_dir, "gradient_boosting_models", f"{self.config.task_id}_model.pkl"), "wb") as f:
+            pickle.dump(self.model, f)
+            print(f"Saved trained model to gradient_boosting_models/{self.config.task_id}_model.pkl")
+        os.makedirs(os.path.join(NSWDataLoader.output_dir, "gradient_boosting_results"), exist_ok=True)
+        if self.config.save_results:
+            progress_log_df.to_csv(os.path.join(os.path.join(NSWDataLoader.output_dir, "gradient_boosting_results"), f"{self.config.task_id}_fitting_log.csv"), index=False)
+        return self.model
+
+    def evaluate_model(self, model_fit: GradientBoostingRegressor | str | None, test_mode=0):
+        if model_fit is None:
+            if self.model is None:
+                raise ValueError("No model provided for testing. Please provide a fitted GradientBoostingRegressor object or a model file name, or ensure that train_model() has been called to train and set the best_model.")
+            else:
+                _model_fit = self.model
+        elif isinstance(model_fit, str):
+            with open(os.path.join(self.nsw_data_loader.output_dir, "gradient_boosting_models", model_fit), "rb") as f:
+                _model_fit = pickle.load(f)
+            if _model_fit is None:
+                raise ValueError("Model not found in gradient_boosting_models directory. Please check the file name and try again or use train_model() to train a new model.")
+        elif isinstance(model_fit, GradientBoostingRegressor):
+            _model_fit = model_fit
+        else:
+            raise ValueError("model_fit must be either None, a file name string, or a GradientBoostingRegressor object.")
+        
+        if test_mode:
+            test_df = self.test_data.copy()
+        else:
+            test_df = self.validation_data.copy()
+
+        origins = range(0, len(test_df) - self.config.forecast_horizon, self.config.eval_step_size)
+        all_preds = []
+        all_actuals = []
+        all_timestamps = []   
+        all_origins = []  
+        full_data = pd.concat([self.training_data, self.validation_data, self.test_data], axis=0)
+        for i in origins:
+
+            freq = pd.Timedelta(minutes=30)
+            forecast_index = test_df.index[i:i + self.config.forecast_horizon]
+            history_end = forecast_index[0] - freq
+            history = list(full_data.loc[:history_end, self.config.target_col].values)
+            preds = []
+
+            for ts in forecast_index:
+                row = pd.DataFrame([list(test_df.loc[ts,self.config.feature_cols])+[history[-i] for i in self.config.target_lags]+[np.mean(history[-i:]) for i in self.config.target_mas]], 
+                                   columns=self.config.all_feature_cols)                                      # removed forecast_demand
+                forecast = _model_fit.predict(row)[0]
+                history.append(forecast)
+                preds.append(forecast)
+
+            y_actual = test_df.iloc[i:i + self.config.forecast_horizon][self.config.target_col].copy()
+            y_pred = pd.Series(preds, index=y_actual.index)
+            pred = y_pred.copy().values
+            actual = y_actual.copy().values
+            if self.config.scale:
+                pos = self.nsw_data_loader.scaler.feature_names_in_.tolist().index(self.config.target_col)
+                mean = self.nsw_data_loader.scaler.mean_[pos]
+                var = self.nsw_data_loader.scaler.var_[pos]
+                pred = pred*var**0.5 + mean
+                actual = actual*var**0.5 + mean
+            if self.config.used_log_target:
+                pred = np.exp(pred)
+                actual = np.exp(actual)
+            all_preds.extend(pred)
+            all_actuals.extend(actual)
+            all_timestamps.extend(y_pred.index.to_list())
+            all_origins.extend([i // self.config.eval_step_size] * self.config.forecast_horizon)
+            if (i // self.config.eval_step_size) % 10 == 0:
+                print(f"\tEvaluating origin {i} / {len(test_df) - self.config.forecast_horizon} or ({i // self.config.eval_step_size} / {(len(test_df) - self.config.forecast_horizon) // self.config.eval_step_size})")
+                print(f"\t\tRMSE so far: {np.sqrt(mean_squared_error(all_actuals, all_preds)):.4f}")
+
+        rmse = np.sqrt(mean_squared_error(all_actuals, all_preds))
+        mae = mean_absolute_error(all_actuals, all_preds)    # use MAE
+        print(f"{'Test' if test_mode else 'Validation'} Results - RMSE: {rmse:.2f} MW | MAE: {mae:.2f} MW")
+        results_df = pd.DataFrame({
+            'index': all_origins,
+            'timestamp': all_timestamps,
+            'y_actual': all_actuals,
+            'y_pred': all_preds
+        })
+        metrics_df = pd.DataFrame({
+            'rmse': [rmse],
+            'mae': [mae]
+        })
+        if test_mode:
+            os.makedirs(os.path.join(NSWDataLoader.output_dir, "gradient_boosting_results"), exist_ok=True)
+            if self.config.save_results:
+                results_df.to_csv(os.path.join(NSWDataLoader.output_dir, "gradient_boosting_results", f"{self.config.task_id}_test_results.csv"), index=False)
+            metrics_df.to_csv(os.path.join(NSWDataLoader.output_dir, "gradient_boosting_results", f"{self.config.task_id}_test_metrics.csv"), index=False)
+            print(f"Saved detailed rolling forecast results to gradient_boosting_results/{self.config.task_id}_test_results.csv")
+            print(f"Saved metrics to gradient_boosting_results/{self.config.task_id}_test_metrics.csv")
+        return all_actuals, all_preds, rmse, mae
+
 
 class LSTMModel(DeepLearningModel):
-    def __init__(self, config: LSTMConfig, func: Callable[[pd.DataFrame,str ,list[str],list[int] | None, list[int] | None], pd.DataFrame] | None = None):
+    def __init__(self, config: LSTMConfig, func: Callable[[pd.DataFrame, str, list[int], list[int], list[tuple[str, int]]], pd.DataFrame] | None = None):
         super().__init__(config, func)
         self.config: LSTMConfig = config
         self.model = self._build_model(config, input_size=len(self.config.all_feature_cols)+1)
@@ -286,26 +407,30 @@ class LSTMModel(DeepLearningModel):
             "y_pred_scaled": y_pred_scaled,
             "y_true_scaled": y_true_scaled,
             "y_pred_real": y_pred_real,
-            "y_true_real": y_true_real,
-            "rmse": rmse,
-            "mse": rmse**2,
-            "mae": mae,
-            "mape": mape,
-            "r2": r2,
-            "within_tol_acc": within_tol_acc,
+            "y_true_real": y_true_real
         }
         results_df = pd.DataFrame(eval_dict)
+        metrics_df = pd.DataFrame({
+            "rmse": [rmse],
+            "mse": [rmse**2],
+            "mae": [mae],
+            "mape": [mape],
+            "r2": [r2],
+            "within_tol_acc": [within_tol_acc]
+        })
         results_path = os.path.join(NSWDataLoader.output_dir, f"LSTM_results")
         if not os.path.exists(results_path):
             os.makedirs(results_path)
-        results_df.to_csv(os.path.join(results_path, f"{self.config.task_id}_{self.config.model_type.value}_test_results.csv"), index=False)
+        if self.config.save_results:
+            results_df.to_csv(os.path.join(results_path, f"{self.config.task_id}_{self.config.model_type.value}_test_results.csv"), index=False)
+        metrics_df.to_csv(os.path.join(results_path, f"{self.config.task_id}_{self.config.model_type.value}_test_metrics.csv"), index=False)
         print(f"Saved detailed rolling forecast results to {results_path}/{self.config.task_id}_{self.config.model_type.value}_test_results.csv")
         return eval_dict
     
 
 class PatchTSTModel(DeepLearningModel):
     # This class is a wrapper around the official PatchTST implementation by the official authors but their data
-    def __init__(self, config: TransformersConfig, func: Callable[[pd.DataFrame,str ,list[str],list[int] | None, list[int] | None], pd.DataFrame] | None = None):
+    def __init__(self, config: TransformersConfig, func: Callable[[pd.DataFrame, str, list[int], list[int], list[tuple[str, int]]], pd.DataFrame] | None = None):
         self.variate = config.variate
         self.patch_len = config.patch_len
         self.stride = config.stride
@@ -428,14 +553,18 @@ class PatchTSTModel(DeepLearningModel):
             'horizon': batch_windows.flatten().astype(int),
             'timestamp': timestamps.flatten(),
             'y_actual': trues.flatten(),
-            'y_pred': preds.flatten(),
-            "rmse": rmse,
-            "mse": mse,
-            "mae": mae
+            'y_pred': preds.flatten()
+        })
+        metrics_df = pd.DataFrame({
+            'mae': [mae],
+            'mse': [mse],
+            'rmse': [rmse]
         })
         if test_mode:
             print(f"Test Results - MAE: {mae:.2f} MW | RMSE: {rmse:.2f} MW | MSE: {mse:.2f} MW^2")
-            results_df.to_csv(os.path.join(results_path, f"{self.config.task_id}_test_results.csv"), index=False)
+            if self.config.save_results:
+                results_df.to_csv(os.path.join(results_path, f"{self.config.task_id}_test_results.csv"), index=False)
+            metrics_df.to_csv(os.path.join(results_path, f"{self.config.task_id}_test_metrics.csv"), index=False)
             print(f"Saved detailed rolling forecast results to {results_path}/{self.config.task_id}_test_results.csv")
         else:
             self.model.train()
@@ -545,12 +674,13 @@ class PatchTSTModel(DeepLearningModel):
         best_model_path = checkpoint_path + '/' + f'{self.config.task_id}_checkpoint.pth'
         self.model.load_state_dict(torch.load(best_model_path))
         fitting_progress_log_df = pd.DataFrame(progress_log)
-        fitting_progress_log_df.to_csv(os.path.join(results_path, f"{self.config.task_id}_fitting_log.csv"), index=False)
+        if self.config.save_results:
+            fitting_progress_log_df.to_csv(os.path.join(results_path, f"{self.config.task_id}_fitting_log.csv"), index=False)
         return self.model
 
 
 class SarimaxModel(BaseModel):
-    def __init__(self, config: SARIMAXConfig, func: Callable[[pd.DataFrame,str ,list[str],list[int] | None, list[int] | None], pd.DataFrame] | None = None):
+    def __init__(self, config: SARIMAXConfig, func: Callable[[pd.DataFrame, str, list[int], list[int], list[tuple[str, int]]], pd.DataFrame] | None = None):
         super().__init__(config, func)
         self.p = config.p
         self.d = config.d
@@ -561,7 +691,7 @@ class SarimaxModel(BaseModel):
         self.seasonality_period = config.seasonality_period
         self.enforce_stationarity = config.enforce_stationarity
         self.enforce_invertibility = config.enforce_invertibility
-        self.val_step_size = config.val_step_size
+        self.val_step_size = config.eval_step_size
         self.best_model: SARIMAXResultsWrapper | None = None
         self.best_order = None
         self.best_seasonal_order = None
@@ -589,13 +719,13 @@ class SarimaxModel(BaseModel):
         else:
             test_df = self.validation_data.copy()
 
-        exog_vars_df = test_df[self.config.feature_cols] if self.config.feature_cols else None
+        exog_vars_df = test_df[self.config.all_feature_cols] if self.config.all_feature_cols else None
         test_df = test_df[self.config.target_col]
 
         assert len(test_df) >= self.config.forecast_horizon, "Test target data points must be at least as many as the forecast horizon"
         assert exog_vars_df is None or len(exog_vars_df) >= self.config.forecast_horizon, "Exogenous variables data points must be at least as many as the forecast horizon"
 
-        origins = range(0, len(test_df) - self.config.forecast_horizon, self.config.val_step_size)
+        origins = range(0, len(test_df) - self.config.forecast_horizon, self.config.eval_step_size)
         print(f"\tNumber of rolling forecast origins: {len(list(origins))}")
 
         all_actuals = []
@@ -621,18 +751,18 @@ class SarimaxModel(BaseModel):
             all_predictions.extend(forecast.values)
             all_actuals.extend(actuals)
             all_timestamps.extend(test_df.index[i : i + self.config.forecast_horizon].tolist())
-            all_origins.extend([i // self.config.val_step_size] * self.config.forecast_horizon)
+            all_origins.extend([i // self.config.eval_step_size] * self.config.forecast_horizon)
             
-            if (i // self.config.val_step_size) % 100 == 0 and i > 0:
+            if (i // self.config.eval_step_size) % 100 == 0 and i > 0:
                 mae_so_far  = mean_absolute_error(all_actuals, all_predictions)
                 mse_so_far  = mean_squared_error(all_actuals, all_predictions)
                 rmse_so_far = np.sqrt(mse_so_far)
-                print(f"\t\tOrigin {i//self.config.val_step_size} out of {len(origins)}: Validation MAE: {mae_so_far:.2f} MW | Validation RMSE so far: {rmse_so_far:.2f} MW")
+                print(f"\t\tOrigin {i//self.config.eval_step_size} out of {len(origins)}: Validation MAE: {mae_so_far:.2f} MW | Validation RMSE so far: {rmse_so_far:.2f} MW")
 
             # 2. Then, advance the Origin forward by 'val_step_size'
             # We do this by APPENDING the model state with the actuals that occurred during that step
-            new_endog = test_df.iloc[i : i + self.config.val_step_size]
-            new_exog = exog_vars_df.iloc[i : i + self.config.val_step_size] if exog_vars_df is not None else None
+            new_endog = test_df.iloc[i : i + self.config.eval_step_size]
+            new_exog = exog_vars_df.iloc[i : i + self.config.eval_step_size] if exog_vars_df is not None else None
             
             # .extend() updates the auto-regressive state of the model with the new observed data, so that the next forecast will be based on this updated state.
             # This simulates the real-world scenario where after making a forecast, we observe the actual outcome and then use that information to make the next forecast.
@@ -646,14 +776,18 @@ class SarimaxModel(BaseModel):
             'index': all_origins,
             'timestamp': all_timestamps,
             'y_actual': all_actuals,
-            'y_pred': all_predictions,
-            'rmse': [rmse] * len(all_timestamps),
-            'mse': [mse] * len(all_timestamps),
-            'mae': [mae] * len(all_timestamps)
+            'y_pred': all_predictions
+        })
+        metrics_df = pd.DataFrame({
+            'rmse': [rmse],
+            'mse': [mse],
+            'mae': [mae]
         })
         if test_mode:
             os.makedirs(os.path.join(NSWDataLoader.output_dir, "sarimax_results"), exist_ok=True)
-            results_df.to_csv(os.path.join(NSWDataLoader.output_dir, "sarimax_results", f"{self.config.task_id}_test_results.csv"), index=False)
+            if self.config.save_results:
+                results_df.to_csv(os.path.join(NSWDataLoader.output_dir, "sarimax_results", f"{self.config.task_id}_test_results.csv"), index=False)
+            metrics_df.to_csv(os.path.join(NSWDataLoader.output_dir, "sarimax_results", f"{self.config.task_id}_test_metrics.csv"), index=False)
             print(f"Saved detailed rolling forecast results to sarimax_results/{self.config.task_id}_test_results.csv")
         return all_origins, all_timestamps, all_actuals, all_predictions, mae, rmse, mse
         
@@ -696,7 +830,7 @@ class SarimaxModel(BaseModel):
                                     end = time()
                                     print(f"\tFitted SARIMAX({p},{d},{q})({p_s},{d_s},{q_s},{self.seasonality_period}) - Training AIC: {model_fit.aic:.2f} | Time taken: {end - start:.2f} seconds\n")
                                     try:
-                                        print(f"\tValidating SARIMAX({p},{d},{q})({p_s},{d_s},{q_s},{self.seasonality_period}) on horizon {self.config.forecast_horizon} with step size {self.config.val_step_size}...")
+                                        print(f"\tValidating SARIMAX({p},{d},{q})({p_s},{d_s},{q_s},{self.seasonality_period}) on horizon {self.config.forecast_horizon} with step size {self.config.eval_step_size}...")
                                         _, _, _, _, mae, rmse, mse = self.evaluate_model(model_fit)
                                         if mse < best_val_mse:
                                             print(f"New best model found: order ({p},{d},{q}) | seasonal_order ({p_s},{d_s},{q_s},{self.seasonality_period}) - RMSE: {rmse:.2f}")
@@ -709,7 +843,7 @@ class SarimaxModel(BaseModel):
                                             progress_log['order'].append(best_order)
                                             progress_log['seasonal_order'].append(best_seasonal_order)
                                             progress_log['validation_horizon'].append(self.config.forecast_horizon)
-                                            progress_log['validation_iters'].append(self.config.val_step_size)
+                                            progress_log['validation_iters'].append(self.config.eval_step_size)
                                             progress_log['training_aic'].append(model_fit.aic)
                                             progress_log['validation_mae'].append(mae)
                                             progress_log['validation_rmse'].append(rmse)
@@ -717,7 +851,7 @@ class SarimaxModel(BaseModel):
                                             progress_log['time_taken_seconds'].append(end - start)
                                     except Exception as e:
                                         print(e)
-                                        print(f"\tError validating SARIMAX({p},{d},{q})({p_s},{d_s},{q_s},{self.seasonality_period}) on horizon {self.config.forecast_horizon} with step size {self.config.val_step_size}: {e}")
+                                        print(f"\tError validating SARIMAX({p},{d},{q})({p_s},{d_s},{q_s},{self.seasonality_period}) on horizon {self.config.forecast_horizon} with step size {self.config.eval_step_size}: {e}")
         print(f"Best SARIMAX{best_order}{best_seasonal_order} - AIC: {best_training_aic:.2f} | Validation MSE: {best_val_mse:.2f} | Validation RMSE: {np.sqrt(best_val_mse):.2f} | Time taken: {progress_log['time_taken_seconds'][-1]:.2f} seconds")
         print("\nNow fitting the best model with both training and validation data with lookback_window applied...")
         train_val_data = pd.concat([self.training_data, self.validation_data])[-self.config.lookback_window:] if self.config.lookback_window else pd.concat([self.training_data, self.validation_data])
@@ -732,9 +866,10 @@ class SarimaxModel(BaseModel):
         self.best_model = best_model
         self.best_order = best_order
         self.best_seasonal_order = best_seasonal_order
-        fitting_progress_log_df = pd.DataFrame(progress_log)
-        os.makedirs(os.path.join(NSWDataLoader.output_dir, "sarimax_results"), exist_ok=True)
-        fitting_progress_log_df.to_csv(os.path.join(NSWDataLoader.output_dir, "sarimax_results", f"{self.config.task_id}_fitting_log.csv"), index=False)
+        if self.config.save_results:
+            fitting_progress_log_df = pd.DataFrame(progress_log)
+            os.makedirs(os.path.join(NSWDataLoader.output_dir, "sarimax_results"), exist_ok=True)
+            fitting_progress_log_df.to_csv(os.path.join(NSWDataLoader.output_dir, "sarimax_results", f"{self.config.task_id}_fitting_log.csv"), index=False)
         os.makedirs(os.path.join(NSWDataLoader.output_dir, "sarimax_models"), exist_ok=True)
         self.best_model.save(os.path.join(NSWDataLoader.output_dir, "sarimax_models", f"{self.config.task_id}_model.pkl"))
         print("Training complete. Saved best model and fitting progress log.")

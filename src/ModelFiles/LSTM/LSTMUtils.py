@@ -11,29 +11,26 @@ from ModelFiles.ModelEnums import LSTMModelType
 
 def add_lag_features(
     df: pd.DataFrame,
-    target_col: str = "TOTALDEMAND",
-    feature_cols: list[str] = ["TEMPERATURE"],
-    demand_lags: list[int] | None = None,
-    feature_lags: list[int] | None = None,
-):
+    target_col: str,
+    target_lags: list[int],
+    target_mas: list[int],
+    feature_lag_cols: list[tuple[str, int]]
+) -> pd.DataFrame:
     df = df.copy()
-    demand_lags = demand_lags or []
-    feature_lags = feature_lags or []
 
-    for lag in demand_lags:
+    for lag in target_lags:
         df[f"{target_col}_lag_{lag}"] = df[target_col].shift(lag)
 
-    for feature_col in feature_cols:
-        if feature_col in df.columns:
-            for lag in feature_lags:
-                df[f"{feature_col}_lag_{lag}"] = df[feature_col].shift(lag)
+    for ma in target_mas:
+        df[f"{target_col}_ma_{ma}"] = df[target_col].shift(1).rolling(ma).mean()
 
-    df = df.dropna().reset_index()
-    return df
+    for feature, lag in feature_lag_cols:
+        df[f"{feature}_lag_{lag}"] = df[feature].shift(lag)
+    return df.dropna()
 
 def make_config_name(config: LSTMConfig):
-    demand_lags_str = "-".join(map(str, config.demand_lags if config.demand_lags else [])) if config.demand_lags else "none"
-    temp_lags_str = "-".join(map(str, config.feature_lags if config.feature_lags else [])) if config.feature_lags else "none"
+    demand_lags_str = "-".join(map(str, config.target_lags if config.target_lags else [])) if config.target_lags else "none"
+    temp_lags_str = "-".join(map(str, [f"{feature}_{lag}" for feature, lag in config.feature_lag_cols] if config.feature_lag_cols else [])) if config.feature_lag_cols else "none"
 
     name = (
         f"{config.model_type.value}"
@@ -432,7 +429,7 @@ if __name__ == "__main__":
         target_col= "TOTALDEMAND",
         feature_cols= ["TEMPERATURE"],
         feature_lag_cols= ["TEMPERATURE"],
-        demand_lags= [],
+        target_lags= [],
         feature_lags= [0,2,50],
         lookback_window= 168,
         forecast_horizon= 48,

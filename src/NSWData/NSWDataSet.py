@@ -7,6 +7,14 @@ from torch.utils.data import Dataset
 import pandas as pd
 
 class BaseDeepLearningNSWDataSet(Dataset):
+    """
+    Base dataset class for deep learning models on NSW data. 
+    This class handles loading and preprocessing the data, as well as providing a consistent interface for getting items and lengths. 
+    It is designed to be subclassed by specific dataset classes for different model types (e.g. LSTMDataSet, TransformersDataSet) that 
+    may have different logic for how to slice the data and what features to include.
+    
+    Note that the data's index will be reset and date column will be brought out as a separate column.
+    """
     def __init__(self, config:DeepLearningConfig, train_df, val_df, test_df, flag='train'):
         self.config = config
         self.train_df = train_df
