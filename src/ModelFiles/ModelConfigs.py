@@ -83,8 +83,8 @@ class SARIMAXConfig(Config):
             "lookback": self.lookback_window,
             "horizon": self.forecast_horizon,
             "target_lags": self.target_lags,
-            "feature_lags": self.feature_lags,
-            "val_step_size": self.val_step_size,
+            "feature_lags": self.feature_lag_cols,
+            "val_step_size": self.eval_step_size,
         }
     
 @dataclass(kw_only=True)
