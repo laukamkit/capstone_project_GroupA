@@ -100,7 +100,7 @@ def run_experiment(config: LSTMConfig, experiment_name=None, save_best_model=Tru
     print(next(iter(train_loader))[0][0][:5])
 
     # 4. Target check
-    print("\nTarget (scaled):", next(iter(train_loader))[1][0][0])
+    print("\nTarget (scaled):", next(iter(train_loader))[1][0][0].item())
 
     # Optional: inverse transform
     if config.scale:
@@ -108,7 +108,7 @@ def run_experiment(config: LSTMConfig, experiment_name=None, save_best_model=Tru
         mean = lstm_model.scaler.mean_[pos]
         var = lstm_model.scaler.var_[pos]
         y_real = next(iter(train_loader))[1][0][0]* var**0.5 + mean
-        print("Target (real scale):", y_real)
+        print("Target (real scale):", y_real.item())
 
     print("="*60 + "\n")
 
@@ -125,9 +125,7 @@ def run_experiment(config: LSTMConfig, experiment_name=None, save_best_model=Tru
 
     print("[DEBUG] First 5 y values from first train batch:", next(iter(train_loader))[1][0][:5])
 
-    train_output = lstm_model.train_model(
-        show_live_plots=show_live_plots,
-    )
+    train_output = lstm_model.train_model()
 
     train_losses = train_output["train_losses"]
     val_losses = train_output["val_losses"]

@@ -1,9 +1,9 @@
-from group_a_models.PatchTST_supervised.models import TimeXer
-from group_a_models.PatchTST_supervised.data_provider.data_factory import data_provider
-from group_a_models.PatchTST_supervised.exp.exp_basic import Exp_Basic
-from group_a_models.PatchTST_supervised.models import iTransformer
-from group_a_models.PatchTST_supervised.utils.tools import EarlyStopping, adjust_learning_rate, visual, test_params_flop
-from group_a_models.PatchTST_supervised.utils.metrics import metric
+from PatchTST_supervised.models import TimeXer
+from PatchTST_supervised.data_provider.data_factory import data_provider
+from PatchTST_supervised.exp.exp_basic import Exp_Basic
+from PatchTST_supervised.models import iTransformer
+from PatchTST_supervised.utils.tools import EarlyStopping, adjust_learning_rate, visual, test_params_flop
+from PatchTST_supervised.utils.metrics import metric
 
 import numpy as np
 import torch
@@ -18,7 +18,7 @@ import warnings
 import matplotlib.pyplot as plt
 import numpy as np
 
-from group_a_models.PatchTST_supervised.models import PatchTST
+from PatchTST_supervised.models import PatchTST
 
 warnings.filterwarnings('ignore')
 
