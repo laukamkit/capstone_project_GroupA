@@ -1,10 +1,9 @@
 from dataclasses import dataclass, field
 from ModelFiles.ModelEnums import *
 
-__all__ = ["TransformersConfig", "SARIMAXConfig", "LSTMConfig", "HORIZONS", "CONTEXT_LENGTHS", "SEEDS"]
+__all__ = ["TransformersConfig", "SARIMAXConfig", "LSTMConfig", "HORIZONS", "SEEDS"]
 
 HORIZONS = [48, 336, 720]
-CONTEXT_LENGTHS = [144, 336, 720]
 SEEDS = [31415, 27182, 14142, 17320, 22360, 57721, 66987, 11235, 98765, 43210]
 
 @dataclass
@@ -21,8 +20,10 @@ class Config:
     feature_lag_cols: list[tuple[str, int]] = field(default_factory=list)
     scale: bool = True # if scale, then make sure to set inverse to True as well
     seed: int | None = None
-    eval_step_size: int = 48
-    save_results: bool = False
+    eval_step_size: int = 1
+    save_training_log: bool = False
+    save_test_results: bool = False
+    debug: bool = False
     @property
     def all_feature_cols(self) -> list[str]:
         lag_feature_cols = []
@@ -47,11 +48,11 @@ class GradientBoostingConfig(Config):
             "n_estimators": self.n_estimators,
             "learning_rate": self.learning_rate,
             "max_depth": self.max_depth,
-            "lookback": self.lookback_window,
             "horizon": self.forecast_horizon,
             "target_lags": self.target_lags,
             "target_mas": self.target_mas,
             "feature_lags": self.feature_lag_cols,
+            "step_size": min(self.eval_step_size, self.forecast_horizon),
         }
 
 @dataclass(kw_only=True)
@@ -66,7 +67,6 @@ class SARIMAXConfig(Config):
     seasonality_period: int
     enforce_stationarity: bool
     enforce_invertibility: bool
-    eval_step_size: int = 48 # every 1 day
     @property
     def config_params_to_results(self) -> dict:
         return {
@@ -84,7 +84,7 @@ class SARIMAXConfig(Config):
             "horizon": self.forecast_horizon,
             "target_lags": self.target_lags,
             "feature_lags": self.feature_lag_cols,
-            "val_step_size": self.eval_step_size,
+            "step_size": min(self.eval_step_size, self.forecast_horizon),
         }
     
 @dataclass(kw_only=True)
@@ -146,6 +146,7 @@ class TransformersConfig(DeepLearningConfig):
             "horizon": self.forecast_horizon,
             "demand_lags": self.target_lags,
             "feature_lags": self.feature_lag_cols,
+            "step_size": min(self.eval_step_size, self.forecast_horizon),
         }
 
 
@@ -179,5 +180,6 @@ class LSTMConfig(DeepLearningConfig):
             "horizon": self.forecast_horizon,
             "target_lags": self.target_lags,
             "feature_lags": self.feature_lag_cols,
+            "step_size": min(self.eval_step_size, self.forecast_horizon),
         }
 

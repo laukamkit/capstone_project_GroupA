@@ -1,6 +1,8 @@
 from ModelFiles.GroupAModels import SarimaxModel
-from ModelFiles.ModelConfigs import SARIMAXConfig, HORIZONS, CONTEXT_LENGTHS, SEEDS
+from ModelFiles.ModelConfigs import SARIMAXConfig, HORIZONS, SEEDS
 from ModelFiles.ModelPlots import *
+
+CONTEXT_LENGTHS = [720]
 
 for horizon in HORIZONS:
     for context_length in CONTEXT_LENGTHS:
@@ -24,10 +26,11 @@ for horizon in HORIZONS:
                 enforce_stationarity=True,
                 enforce_invertibility=True,
                 seed=None,
-                eval_step_size=48, # For SARIMAX, this is the step size to use when evaluating against validation or test set.
+                save_training_log= True,
+                eval_step_size=48,
             )
             sarimax_model = SarimaxModel(sarimax_config)
             sarimax_model.train_model()
             all_origins, all_timestamps, all_actuals, all_predictions, mae, rmse, mse = sarimax_model.evaluate_model(None, test_mode=True)
-            print("=" * 50)
+            print("=" * 200)
             print("\n")
