@@ -23,6 +23,9 @@ class GradientBoostingModel(BaseModel):
     def __init__(self, config: GradientBoostingConfig, func: Callable[[pd.DataFrame, str, list[int], list[int], list[tuple[str, int]]], pd.DataFrame] | None = None):
         super().__init__(config, func)
         self.config: GradientBoostingConfig = config
+        if config.eval_step_size > config.forecast_horizon:
+            print(f"Warning: eval_step_size {config.eval_step_size} is greater than forecast_horizon {config.forecast_horizon}. Setting eval_step_size to forecast_horizon.")
+        self.val_step_size = min(config.eval_step_size, config.forecast_horizon)
         self.model = GradientBoostingRegressor(
             n_estimators=self.config.n_estimators,
             learning_rate=self.config.learning_rate,
@@ -47,7 +50,7 @@ class GradientBoostingModel(BaseModel):
             pickle.dump(self.model, f)
             print(f"Saved trained model to gradient_boosting_models/{self.config.task_id}_model.pkl")
         os.makedirs(os.path.join(NSWDataLoader.output_dir, "gradient_boosting_results"), exist_ok=True)
-        if self.config.save_results:
+        if self.config.save_training_log:
             progress_log_df.to_csv(os.path.join(os.path.join(NSWDataLoader.output_dir, "gradient_boosting_results"), f"{self.config.task_id}_fitting_log.csv"), index=False)
         return self.model
 
@@ -72,7 +75,8 @@ class GradientBoostingModel(BaseModel):
         else:
             test_df = self.validation_data.copy()
 
-        origins = range(0, len(test_df) - self.config.forecast_horizon, self.config.eval_step_size)
+        val_step_size = min(self.val_step_size, len(test_df) - self.config.forecast_horizon)
+        origins = range(0, len(test_df) - self.config.forecast_horizon, val_step_size)
         all_preds = []
         all_actuals = []
         all_timestamps = []   
@@ -109,9 +113,9 @@ class GradientBoostingModel(BaseModel):
             all_preds.extend(pred)
             all_actuals.extend(actual)
             all_timestamps.extend(y_pred.index.to_list())
-            all_origins.extend([i // self.config.eval_step_size] * self.config.forecast_horizon)
-            if (i // self.config.eval_step_size) % 10 == 0:
-                print(f"\tEvaluating origin {i} / {len(test_df) - self.config.forecast_horizon} or ({i // self.config.eval_step_size} / {(len(test_df) - self.config.forecast_horizon) // self.config.eval_step_size})")
+            all_origins.extend([i // val_step_size] * self.config.forecast_horizon)
+            if (i // val_step_size) % 10 == 0:
+                print(f"\tEvaluating origin {i} / {len(test_df) - self.config.forecast_horizon} or ({i // val_step_size} / {(len(test_df) - self.config.forecast_horizon) // val_step_size})")
                 print(f"\t\tRMSE so far: {np.sqrt(mean_squared_error(all_actuals, all_preds)):.4f}")
 
         rmse = np.sqrt(mean_squared_error(all_actuals, all_preds))
@@ -133,7 +137,7 @@ class GradientBoostingModel(BaseModel):
         })
         if test_mode:
             os.makedirs(os.path.join(NSWDataLoader.output_dir, "gradient_boosting_results"), exist_ok=True)
-            if self.config.save_results:
+            if self.config.save_test_results:
                 results_df.to_csv(os.path.join(NSWDataLoader.output_dir, "gradient_boosting_results", f"{self.config.task_id}_test_results.csv"), index=False)
             metrics_df.to_csv(os.path.join(NSWDataLoader.output_dir, "gradient_boosting_results", f"{self.config.task_id}_test_metrics.csv"), index=False)
             print(f"Saved detailed rolling forecast results to gradient_boosting_results/{self.config.task_id}_test_results.csv")
@@ -245,11 +249,7 @@ class LSTMModel(DeepLearningModel):
                 raise ValueError(f"Unsupported scheduler: {scheduler_name}")
         return scheduler
     
-    def train_model(
-        self,
-        show_live_plots=False,
-        title="Training History",
-    ):
+    def train_model(self):
         train_data, train_loader = self._get_data(flag='train')
         val_data, val_loader = self._get_data(flag='val')
 
@@ -267,8 +267,10 @@ class LSTMModel(DeepLearningModel):
         for epoch in range(self.config.training_epochs):
             self.model.train()
             running_train_loss = 0.0
-
-            for X_batch, y_batch, _, _, _, _ in train_loader:
+            debug = self.config.debug
+            for X_batch, y_batch, _, _, _, y_batch_time in train_loader:
+                if debug:
+                    debug = self._debug_batch_timing('Training', y_batch_time)
                 X_batch = X_batch.to(self.device)
                 y_batch = y_batch[:, -1].to(self.device) # predicting only the last timestep in the forecast horizon
 
@@ -286,17 +288,22 @@ class LSTMModel(DeepLearningModel):
             self.model.eval()
             running_val_loss = 0.0
 
+            preds = []
+            actuals = []
             with torch.no_grad():
-                for X_batch, y_batch, _, _, _, _ in val_loader:
+                debug = self.config.debug
+                for X_batch, y_batch, _, _, _, y_batch_time in val_loader:
+                    if debug:
+                        debug = self._debug_batch_timing('Validation', y_batch_time)
                     X_batch = X_batch.to(self.device)
                     y_batch = y_batch[:, -1].to(self.device) # predicting only the last timestep in the forecast horizon
 
                     y_pred = self.model(X_batch)
-                    loss = criterion(y_pred, y_batch)
-
-                    running_val_loss += loss.item() * X_batch.size(0)
-
-            epoch_val_loss = running_val_loss / len(val_loader.dataset)
+                    preds.extend(y_pred.cpu().numpy())
+                    actuals.extend(y_batch.cpu().numpy())
+            preds = np.array(preds).ravel()
+            actuals = np.array(actuals).ravel()
+            epoch_val_loss = mean_squared_error(preds, actuals)
             val_losses.append(epoch_val_loss)
 
             if scheduler is not None:
@@ -330,6 +337,19 @@ class LSTMModel(DeepLearningModel):
 
         if best_state is None:
             best_state = deepcopy(self.model.state_dict())
+
+        if self.config.save_training_log:
+            results_path = os.path.join(NSWDataLoader.output_dir, f"LSTM_results")
+            os.makedirs(results_path, exist_ok=True)
+            progress_log = {
+                "epoch": list(range(1, self.total_epochs_run + 1)),
+                "train_loss": train_losses,
+                "val_loss": val_losses,
+                "best_epoch": [self.best_epoch] * self.total_epochs_run,
+                "early_stop_epoch": [self.early_stop_epoch] * self.total_epochs_run,
+            }
+            progress_log_df = pd.DataFrame(progress_log)
+            progress_log_df.to_csv(os.path.join(results_path, f"{self.config.task_id}_fitting_log.csv"), index=False) 
 
         # if show_live_plots:
         #     plot_training_history(train_losses, val_losses, title=title)
@@ -367,7 +387,10 @@ class LSTMModel(DeepLearningModel):
         batch_nums = []
         batch_windows = []
         with torch.no_grad():
+            debug = self.config.debug
             for i, (X_batch, y_batch, _, _, x_batch_time, y_batch_time) in enumerate(test_loader):
+                if debug:
+                    debug = self._debug_batch_timing('Test', y_batch_time)
                 X_batch = X_batch.to(self.device)
                 preds = self.model(X_batch).cpu().numpy()
                 batch_window = np.arange(y_batch[:, -1].numpy().shape[0])
@@ -436,7 +459,7 @@ class LSTMModel(DeepLearningModel):
         results_path = os.path.join(NSWDataLoader.output_dir, f"LSTM_results")
         if not os.path.exists(results_path):
             os.makedirs(results_path)
-        if self.config.save_results:
+        if self.config.save_test_results:
             results_df.to_csv(os.path.join(results_path, f"{self.config.task_id}_{self.config.model_type.value}_test_results.csv"), index=False)
         metrics_df.to_csv(os.path.join(results_path, f"{self.config.task_id}_{self.config.model_type.value}_test_metrics.csv"), index=False)
         print(f"Saved detailed rolling forecast results to {results_path}/{self.config.task_id}_{self.config.model_type.value}_test_results.csv")
@@ -493,106 +516,6 @@ class PatchTSTModel(DeepLearningModel):
         true_inverse = true_inverse[:, -1:].reshape(shape)
         return pred_inverse, true_inverse
     
-    def evaluate_model(self, test_mode=0):
-        test_data, test_loader = self._get_data(flag='test' if test_mode else 'val')
-
-        if test_mode:
-            results_path = os.path.join(NSWDataLoader.output_dir, f"{self.config.model.value}_results")
-            if not os.path.exists(results_path):
-                os.makedirs(results_path)
-            checkpoint_path = os.path.join(NSWDataLoader.output_dir, f"{self.config.model.value}_checkpoints")
-            if not os.path.exists(checkpoint_path):
-                os.makedirs(checkpoint_path)
-            print('loading model')
-            self.model.load_state_dict(torch.load(os.path.join(checkpoint_path, f'{self.config.task_id}_checkpoint.pth')))
-
-        preds = []
-        trues = []
-        timestamps = []
-        batch_nums = []
-        batch_windows = []
-        self.model.eval()
-        with torch.no_grad():
-            for i, (batch_x, batch_y, batch_x_mark, _, x_batch_time, y_batch_time) in enumerate(test_loader):
-                batch_x = batch_x.float().to(self.device)
-                batch_y = batch_y.float()
-                batch_x_mark = batch_x_mark.float().to(self.device)
-                batch_window = (np.zeros((y_batch_time.shape[0],y_batch_time.shape[1])) + np.arange(y_batch_time.shape[1]))
-
-                if 'linear' in self.config.model.value.lower() or 'tst' in self.config.model.value.lower():
-                        outputs = self.model(batch_x)
-                else:
-                    if self.config.output_attention:
-                        outputs = self.model(batch_x, batch_x_mark)[0]
-
-                    else:
-                        outputs = self.model(batch_x, batch_x_mark)
-
-                f_dim = -1 if self.config.variate == 'MS' else 0
-                outputs = outputs[:, -self.config.forecast_horizon:, f_dim:]
-                batch_y = batch_y[:, -self.config.forecast_horizon:, f_dim:]
-                y_batch_time = y_batch_time[:, -self.config.forecast_horizon:]
-                batch_window = batch_window[:, -self.config.forecast_horizon:]
-                outputs = outputs.detach().cpu()
-                batch_y = batch_y.detach().cpu()
-                
-                ts = y_batch_time.detach().cpu().numpy()
-                current_batch_number = np.zeros(ts.shape)+i
-                batch_nums.append(current_batch_number)
-                
-                if self.config.scale:
-                    pred, true = self._compute_inverse_scaling(batch_y.shape, outputs, batch_y)
-                else:
-                    pred = outputs.numpy()
-                    true = batch_y.numpy()
-                if self.config.used_log_target:
-                    pred = np.exp(pred)
-                    true = np.exp(true)
-                preds.append(pred)
-                trues.append(true)
-                timestamps.append(ts)
-                batch_windows.append(batch_window)
-        preds = np.array(preds)
-        trues = np.array(trues)
-        timestamps = np.array(timestamps, dtype='<M8[us]')
-        batch_nums = np.array(batch_nums)
-        batch_windows = np.array(batch_windows)
-
-        preds = preds.reshape(-1, preds.shape[-2], preds.shape[-1])
-        trues = trues.reshape(-1, trues.shape[-2], trues.shape[-1])
-        timestamps = timestamps.reshape(-1, timestamps.shape[-1])
-        batch_nums = batch_nums.reshape(-1, batch_nums.shape[-1])
-        batch_windows = batch_windows.reshape(-1, batch_windows.shape[-1])
-        mae, mse, rmse, mape, mspe, rse, corr = metric(preds, trues)
-        
-        # result save
-        results_df = pd.DataFrame({
-            'index': batch_nums.flatten().astype(int),
-            'horizon': batch_windows.flatten().astype(int),
-            'timestamp': timestamps.flatten(),
-            'y_actual': trues.flatten(),
-            'y_pred': preds.flatten()
-        })
-        metrics_df = pd.DataFrame({
-            'mae': [mae],
-            'mse': [mse],
-            'rmse': [rmse],
-            'total_epochs_run': [self.total_epochs_run],
-            'best_epoch': [self.best_epoch],
-            'early_stop_epoch': [self.early_stop_epoch],
-            **{k: [v] for k, v in self.config.config_params_to_results.items()}
-        })
-        if test_mode:
-            print(f"Test Results - MAE: {mae:.2f} MW | RMSE: {rmse:.2f} MW | MSE: {mse:.2f} MW^2")
-            if self.config.save_results:
-                results_df.to_csv(os.path.join(results_path, f"{self.config.task_id}_test_results.csv"), index=False)
-            metrics_df.to_csv(os.path.join(results_path, f"{self.config.task_id}_test_metrics.csv"), index=False)
-            print(f"Saved detailed rolling forecast results to {results_path}/{self.config.task_id}_test_results.csv")
-        else:
-            self.model.train()
-        return batch_nums.flatten().astype(int), timestamps.flatten(), trues.flatten(), preds.flatten(), batch_windows.flatten(), mae, rmse, mse
-
-    
     def train_model(self):
         train_data, train_loader = self._get_data(flag='train')
 
@@ -623,6 +546,8 @@ class PatchTSTModel(DeepLearningModel):
             'model_name': [],
             'lookback_window': [],
             'epoch': [],
+            'training_loss': [],
+            'validation_loss': [],
             'validation_horizon': [],
             'validation_rmse': [],
             'validation_mse': [],
@@ -635,7 +560,10 @@ class PatchTSTModel(DeepLearningModel):
 
             self.model.train()
             epoch_time = time()
-            for i, (batch_x, batch_y, batch_x_mark, batch_y_mark, _, _) in enumerate(train_loader):
+            debug = self.config.debug
+            for i, (batch_x, batch_y, batch_x_mark, batch_y_mark, _, y_batch_time) in enumerate(train_loader):
+                if debug:
+                    debug = self._debug_batch_timing('Training', y_batch_time)
                 iter_count += 1
                 model_optim.zero_grad()
                 batch_x = batch_x.float().to(self.device)
@@ -676,20 +604,23 @@ class PatchTSTModel(DeepLearningModel):
             cost_time = time() - epoch_time
             print("Epoch: {} cost time: {}".format(epoch + 1, cost_time))
             train_loss = np.average(train_loss)
-            _, _, _, _, _, mae_val, rmse_val, mse_val = self.evaluate_model()
+            _, _, _, _, _, mae_val, rmse_val, mse_val, vali_loss = self.evaluate_model()
             if rmse_val < best_val_rmse_train:
                 best_val_rmse_train = rmse_val
                 best_epoch_train = epoch + 1
             progress_log['model_name'].append(self.config.task_id)
             progress_log['lookback_window'].append(self.config.lookback_window)
             progress_log['epoch'].append(epoch + 1)
+            progress_log['training_loss'].append(train_loss)
+            progress_log['validation_loss'].append(vali_loss)
             progress_log['validation_horizon'].append(self.config.forecast_horizon)
             progress_log['validation_rmse'].append(rmse_val)
             progress_log['validation_mse'].append(mse_val)
             progress_log['time_taken_seconds'].append(cost_time)
-            print("Epoch: {0}, Steps: {1} | Train Loss: {2:.7f} Vali Loss (RMSE): {3:.7f}".format(
-                epoch + 1, train_steps, train_loss, rmse_val))
-            early_stopping(rmse_val, self.model, checkpoint_path, self.config.task_id)
+            print("Epoch: {0}, Steps: {1} | Train Loss: {2:.7f} Vali Loss: {3:.7f}".format(
+                epoch + 1, train_steps, train_loss, vali_loss))
+            print(f"\tValidation RMSE: {rmse_val:.4f} | Validation MAE: {mae_val:.4f}")
+            early_stopping(vali_loss, self.model, checkpoint_path, self.config.task_id)
             if early_stopping.early_stop:
                 print("Early stopping")
                 break
@@ -705,10 +636,119 @@ class PatchTSTModel(DeepLearningModel):
         self.early_stop_epoch = epoch + 1 if early_stopping.early_stop else None
         self.model.load_state_dict(torch.load(best_model_path))
         fitting_progress_log_df = pd.DataFrame(progress_log)
-        if self.config.save_results:
+        if self.config.save_training_log:
             fitting_progress_log_df.to_csv(os.path.join(results_path, f"{self.config.task_id}_fitting_log.csv"), index=False)
         return self.model
+    
+    def evaluate_model(self, test_mode=0):
+        test_data, test_loader = self._get_data(flag='test' if test_mode else 'val')
 
+        if test_mode:
+            results_path = os.path.join(NSWDataLoader.output_dir, f"{self.config.model.value}_results")
+            if not os.path.exists(results_path):
+                os.makedirs(results_path)
+            checkpoint_path = os.path.join(NSWDataLoader.output_dir, f"{self.config.model.value}_checkpoints")
+            if not os.path.exists(checkpoint_path):
+                os.makedirs(checkpoint_path)
+            print('loading model')
+            self.model.load_state_dict(torch.load(os.path.join(checkpoint_path, f'{self.config.task_id}_checkpoint.pth')))
+
+        criterion = self._select_criterion()
+        preds = []
+        trues = []
+        timestamps = []
+        batch_nums = []
+        batch_windows = []
+        total_loss = []
+        self.model.eval()
+        debug = self.config.debug
+        with torch.no_grad():
+            for i, (batch_x, batch_y, batch_x_mark, _, x_batch_time, y_batch_time) in enumerate(test_loader):
+                if debug:
+                    debug = self._debug_batch_timing('Test' if test_mode else 'Validation', y_batch_time)
+                batch_x = batch_x.float().to(self.device)
+                batch_y = batch_y.float()
+                batch_x_mark = batch_x_mark.float().to(self.device)
+                batch_window = (np.zeros((y_batch_time.shape[0],y_batch_time.shape[1])) + np.arange(y_batch_time.shape[1]))
+
+                if 'linear' in self.config.model.value.lower() or 'tst' in self.config.model.value.lower():
+                        outputs = self.model(batch_x)
+                else:
+                    if self.config.output_attention:
+                        outputs = self.model(batch_x, batch_x_mark)[0]
+
+                    else:
+                        outputs = self.model(batch_x, batch_x_mark)
+                
+                f_dim = -1 if self.config.variate == 'MS' else 0
+                outputs = outputs[:, -self.config.forecast_horizon:, f_dim:]
+                batch_y = batch_y[:, -self.config.forecast_horizon:, f_dim:]
+                y_batch_time = y_batch_time[:, -self.config.forecast_horizon:]
+                batch_window = batch_window[:, -self.config.forecast_horizon:]
+                outputs = outputs.detach().cpu()
+                batch_y = batch_y.detach().cpu()
+
+                loss = criterion(outputs, batch_y)
+                total_loss.append(loss)
+
+                ts = y_batch_time.detach().cpu().numpy()
+                current_batch_number = np.zeros(ts.shape)+i
+                batch_nums.extend(current_batch_number)
+                
+                if self.config.scale:
+                    pred, true = self._compute_inverse_scaling(batch_y.shape, outputs, batch_y)
+                else:
+                    pred = outputs.numpy()
+                    true = batch_y.numpy()
+                if self.config.used_log_target:
+                    pred = np.exp(pred)
+                    true = np.exp(true)
+                preds.extend(pred)
+                trues.extend(true)
+                timestamps.extend(ts)
+                batch_windows.extend(batch_window)
+        
+        total_loss = np.average(total_loss)
+        preds = np.array(preds)
+        trues = np.array(trues)
+        timestamps = np.array(timestamps, dtype='<M8[us]')
+        batch_nums = np.array(batch_nums)
+        batch_windows = np.array(batch_windows)
+
+        preds = preds.reshape(-1, preds.shape[-2], preds.shape[-1])
+        trues = trues.reshape(-1, trues.shape[-2], trues.shape[-1])
+        timestamps = timestamps.reshape(-1, timestamps.shape[-1])
+        batch_nums = batch_nums.reshape(-1, batch_nums.shape[-1])
+        batch_windows = batch_windows.reshape(-1, batch_windows.shape[-1])
+        mae, mse, rmse, mape, mspe, rse, corr = metric(preds, trues)
+        
+        # result save
+        results_df = pd.DataFrame({
+            'index': batch_nums.flatten().astype(int),
+            'horizon': batch_windows.flatten().astype(int),
+            'timestamp': timestamps.flatten(),
+            'y_actual': trues.flatten(),
+            'y_pred': preds.flatten()
+        })
+        metrics_df = pd.DataFrame({
+            'mae': [mae],
+            'mse': [mse],
+            'rmse': [rmse],
+            'total_epochs_run': [self.total_epochs_run],
+            'best_epoch': [self.best_epoch],
+            'early_stop_epoch': [self.early_stop_epoch],
+            **{k: [v] for k, v in self.config.config_params_to_results.items()}
+        })
+        if test_mode:
+            print(f"Test Results - MAE: {mae:.2f} MW | RMSE: {rmse:.2f} MW | MSE: {mse:.2f} MW^2")
+            if self.config.save_test_results:
+                results_df.to_csv(os.path.join(results_path, f"{self.config.task_id}_test_results.csv"), index=False)
+            metrics_df.to_csv(os.path.join(results_path, f"{self.config.task_id}_test_metrics.csv"), index=False)
+            print(f"Saved detailed rolling forecast results to {results_path}/{self.config.task_id}_test_results.csv")
+        else:
+            self.model.train()
+        return batch_nums.flatten().astype(int), timestamps.flatten(), trues.flatten(), preds.flatten(), batch_windows.flatten(), mae, rmse, mse, total_loss
+    
 
 class SarimaxModel(BaseModel):
     def __init__(self, config: SARIMAXConfig, func: Callable[[pd.DataFrame, str, list[int], list[int], list[tuple[str, int]]], pd.DataFrame] | None = None):
@@ -722,7 +762,9 @@ class SarimaxModel(BaseModel):
         self.seasonality_period = config.seasonality_period
         self.enforce_stationarity = config.enforce_stationarity
         self.enforce_invertibility = config.enforce_invertibility
-        self.val_step_size = config.eval_step_size
+        if config.eval_step_size > config.forecast_horizon:
+            print(f"Warning: eval_step_size {config.eval_step_size} is greater than forecast_horizon {config.forecast_horizon}. Setting eval_step_size to forecast_horizon.")
+        
         self.best_model: SARIMAXResultsWrapper | None = None
         self.best_order = None
         self.best_seasonal_order = None
@@ -755,8 +797,8 @@ class SarimaxModel(BaseModel):
 
         assert len(test_df) >= self.config.forecast_horizon, "Test target data points must be at least as many as the forecast horizon"
         assert exog_vars_df is None or len(exog_vars_df) >= self.config.forecast_horizon, "Exogenous variables data points must be at least as many as the forecast horizon"
-
-        origins = range(0, len(test_df) - self.config.forecast_horizon, self.config.eval_step_size)
+        val_step_size = min(self.val_step_size, len(test_df) - self.config.forecast_horizon)
+        origins = range(0, len(test_df) - self.config.forecast_horizon, val_step_size)
         print(f"\tNumber of rolling forecast origins: {len(list(origins))}")
 
         all_actuals = []
@@ -782,18 +824,18 @@ class SarimaxModel(BaseModel):
             all_predictions.extend(forecast.values)
             all_actuals.extend(actuals)
             all_timestamps.extend(test_df.index[i : i + self.config.forecast_horizon].tolist())
-            all_origins.extend([i // self.config.eval_step_size] * self.config.forecast_horizon)
+            all_origins.extend([i // val_step_size] * self.config.forecast_horizon)
             
-            if (i // self.config.eval_step_size) % 100 == 0 and i > 0:
+            if (i // val_step_size) % 100 == 0 and i > 0:
                 mae_so_far  = mean_absolute_error(all_actuals, all_predictions)
                 mse_so_far  = mean_squared_error(all_actuals, all_predictions)
                 rmse_so_far = np.sqrt(mse_so_far)
-                print(f"\t\tOrigin {i//self.config.eval_step_size} out of {len(origins)}: Validation MAE: {mae_so_far:.2f} MW | Validation RMSE so far: {rmse_so_far:.2f} MW")
+                print(f"\t\tOrigin {i//val_step_size} out of {len(origins)}: Validation MAE: {mae_so_far:.2f} MW | Validation RMSE so far: {rmse_so_far:.2f} MW")
 
             # 2. Then, advance the Origin forward by 'val_step_size'
             # We do this by APPENDING the model state with the actuals that occurred during that step
-            new_endog = test_df.iloc[i : i + self.config.eval_step_size]
-            new_exog = exog_vars_df.iloc[i : i + self.config.eval_step_size] if exog_vars_df is not None else None
+            new_endog = test_df.iloc[i : i + val_step_size]
+            new_exog = exog_vars_df.iloc[i : i + val_step_size] if exog_vars_df is not None else None
             
             # .extend() updates the auto-regressive state of the model with the new observed data, so that the next forecast will be based on this updated state.
             # This simulates the real-world scenario where after making a forecast, we observe the actual outcome and then use that information to make the next forecast.
@@ -820,7 +862,7 @@ class SarimaxModel(BaseModel):
         })
         if test_mode:
             os.makedirs(os.path.join(NSWDataLoader.output_dir, "sarimax_results"), exist_ok=True)
-            if self.config.save_results:
+            if self.config.save_test_results:
                 results_df.to_csv(os.path.join(NSWDataLoader.output_dir, "sarimax_results", f"{self.config.task_id}_test_results.csv"), index=False)
             metrics_df.to_csv(os.path.join(NSWDataLoader.output_dir, "sarimax_results", f"{self.config.task_id}_test_metrics.csv"), index=False)
             print(f"Saved detailed rolling forecast results to sarimax_results/{self.config.task_id}_test_results.csv")
@@ -865,7 +907,7 @@ class SarimaxModel(BaseModel):
                                     end = time()
                                     print(f"\tFitted SARIMAX({p},{d},{q})({p_s},{d_s},{q_s},{self.seasonality_period}) - Training AIC: {model_fit.aic:.2f} | Time taken: {end - start:.2f} seconds\n")
                                     try:
-                                        print(f"\tValidating SARIMAX({p},{d},{q})({p_s},{d_s},{q_s},{self.seasonality_period}) on horizon {self.config.forecast_horizon} with step size {self.config.eval_step_size}...")
+                                        print(f"\tValidating SARIMAX({p},{d},{q})({p_s},{d_s},{q_s},{self.seasonality_period}) on horizon {self.config.forecast_horizon} with step size {self.val_step_size}...")
                                         _, _, _, _, mae, rmse, mse = self.evaluate_model(model_fit)
                                         if mse < best_val_mse:
                                             print(f"New best model found: order ({p},{d},{q}) | seasonal_order ({p_s},{d_s},{q_s},{self.seasonality_period}) - RMSE: {rmse:.2f}")
@@ -878,7 +920,7 @@ class SarimaxModel(BaseModel):
                                             progress_log['order'].append(best_order)
                                             progress_log['seasonal_order'].append(best_seasonal_order)
                                             progress_log['validation_horizon'].append(self.config.forecast_horizon)
-                                            progress_log['validation_iters'].append(self.config.eval_step_size)
+                                            progress_log['validation_iters'].append(self.val_step_size)
                                             progress_log['training_aic'].append(model_fit.aic)
                                             progress_log['validation_mae'].append(mae)
                                             progress_log['validation_rmse'].append(rmse)
@@ -886,7 +928,7 @@ class SarimaxModel(BaseModel):
                                             progress_log['time_taken_seconds'].append(end - start)
                                     except Exception as e:
                                         print(e)
-                                        print(f"\tError validating SARIMAX({p},{d},{q})({p_s},{d_s},{q_s},{self.seasonality_period}) on horizon {self.config.forecast_horizon} with step size {self.config.eval_step_size}: {e}")
+                                        print(f"\tError validating SARIMAX({p},{d},{q})({p_s},{d_s},{q_s},{self.seasonality_period}) on horizon {self.config.forecast_horizon} with step size {self.val_step_size}: {e}")
         print(f"Best SARIMAX{best_order}{best_seasonal_order} - AIC: {best_training_aic:.2f} | Validation MSE: {best_val_mse:.2f} | Validation RMSE: {np.sqrt(best_val_mse):.2f} | Time taken: {progress_log['time_taken_seconds'][-1]:.2f} seconds")
         print("\nNow fitting the best model with both training and validation data with lookback_window applied...")
         train_val_data = pd.concat([self.training_data, self.validation_data])[-self.config.lookback_window:] if self.config.lookback_window else pd.concat([self.training_data, self.validation_data])
@@ -901,7 +943,7 @@ class SarimaxModel(BaseModel):
         self.best_model = best_model
         self.best_order = best_order
         self.best_seasonal_order = best_seasonal_order
-        if self.config.save_results:
+        if self.config.save_training_log:
             fitting_progress_log_df = pd.DataFrame(progress_log)
             os.makedirs(os.path.join(NSWDataLoader.output_dir, "sarimax_results"), exist_ok=True)
             fitting_progress_log_df.to_csv(os.path.join(NSWDataLoader.output_dir, "sarimax_results", f"{self.config.task_id}_fitting_log.csv"), index=False)

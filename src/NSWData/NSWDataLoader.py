@@ -74,10 +74,6 @@ class NSWDataLoader:
     
     @classmethod
     def data_provider(cls, train_df, val_df, test_df, config, flag):
-        if flag == 'test':
-            shuffle_flag = False
-        else:
-            shuffle_flag = True
         
         if isinstance(config, TransformersConfig):
             Data = TransformersDataSet
@@ -94,12 +90,25 @@ class NSWDataLoader:
             flag=flag
         )
         print(flag, len(data_set))
+        indices = None
+        drop_last = True
+        if flag == 'test' or flag == 'val':
+            shuffle_flag = False
+            step = getattr(config, 'eval_step_size', 1)
+            if config.eval_step_size > config.forecast_horizon:
+                print(f"Warning: eval_step_size {config.eval_step_size} is greater than forecast_horizon {config.forecast_horizon}. Setting eval_step_size to forecast_horizon.")
+            step = min(config.eval_step_size, len(data_set), config.forecast_horizon)
+            indices = list(range(0, len(data_set), step))
+            drop_last = False
+        else:
+            shuffle_flag = True
         data_loader = DataLoader(
             data_set,
             batch_size=config.batch_size,
+            sampler=indices if flag in ['test', 'val'] else None,
             shuffle=shuffle_flag,
             num_workers=config.num_workers,
-            drop_last=True)
+            drop_last=drop_last)
         return data_set, data_loader
     
     def extract_data_from_zip(self) -> None:

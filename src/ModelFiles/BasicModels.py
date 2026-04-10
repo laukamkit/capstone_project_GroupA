@@ -17,7 +17,7 @@ class BaseModel:
         self.training_data = func(training_data, config.target_col, config.target_lags, config.target_mas, config.feature_lag_cols) if func else training_data
         self.validation_data = func(validation_data, config.target_col, config.target_lags, config.target_mas, config.feature_lag_cols) if func else validation_data
         self.test_data = func(test_data, config.target_col, config.target_lags, config.target_mas, config.feature_lag_cols) if func else test_data
-
+        self.val_step_size = min(config.eval_step_size, config.forecast_horizon)
         if self.config.seed is not None:
             self.set_seed(self.config.seed)
             print(f"Set random seed to {self.config.seed}")
@@ -37,41 +37,13 @@ class BaseModel:
     def _get_data(self, flag):
             data_set, data_loader = self.nsw_data_loader.data_provider(self.training_data, self.validation_data, self.test_data, self.config, flag)
             return data_set, data_loader
-    
-    # def _compute_inverse_scaling(self, shape, pred, true):
-    #     pos = self.nsw_data_loader.scaler.feature_names_in_.tolist().index(self.config.target_col)
-    #     mean = self.nsw_data_loader.scaler.mean_[pos]
-    #     var = self.nsw_data_loader.scaler.var_[pos]
-    #     pred_tile = np.tile(pred, [1, 1, 1])
-    #     pred_inverse = pred_tile.reshape(shape[0] * shape[1], 1)
-    #     pred_inverse = pred_inverse* var**0.5 + mean
-    #     pred_inverse = pred_inverse[:, -1:].reshape(shape)
-    #     true_tiled = np.tile(true, [1, 1, 1])
-    #     true_inverse = true_tiled.reshape(shape[0] * shape[1], 1)
-    #     true_inverse = true_inverse*var**0.5 + mean
-    #     true_inverse = true_inverse[:, -1:].reshape(shape)
-    #     return pred_inverse, true_inverse
             
     def train_model(self):
         raise NotImplementedError
     
     def evaluate_model(self):
         raise NotImplementedError
-    
-    # @classmethod
-    # def plot_predictions(cls, y_true_real, y_pred_real, n_points=500, title="Forecast vs Actual"):
-    #     plt.figure(figsize=(12, 5))
-    #     plt.plot(y_true_real[:n_points], label="Actual")
-    #     plt.plot(y_pred_real[:n_points], label="Predicted")
-    #     plt.xlabel("Test Sample")
-    #     plt.ylabel("Demand")
-    #     plt.title(title)
-    #     plt.legend()
-    #     plt.grid(True, alpha=0.3)
-    #     plt.tight_layout()
-    #     plt.show()
-
-
+  
 class DeepLearningModel(BaseModel):
     def __init__(self, config: DeepLearningConfig, func: Callable[[pd.DataFrame, str, list[int], list[int], list[tuple[str, int]]], pd.DataFrame] | None = None):
         super().__init__(config, func)
@@ -90,3 +62,22 @@ class DeepLearningModel(BaseModel):
             device = torch.device('cpu')
             print('Use CPU')
         return device
+    
+    def _debug_batch_timing(self, loop_name, y_batch_time):
+        print("="*50)
+        print(f"{loop_name} Loop Debug Info:")
+        print("="*50)
+        times = np.array(y_batch_time, dtype='datetime64[us]')
+        step = np.timedelta64(30, 'm')
+        val_step_size = min(self.val_step_size, y_batch_time.shape[1]) # in case eval_step_size is greater than number of time steps in batch
+        within_batch_diff = int((times[0, -1] - times[0, 0]) / step) + 1
+        across_batch_diff = ((float((times[-1, 0] - times[0, 0]) / step)) / val_step_size) + 1
+        print(f"\tFirst datetime in first batch: {np.array(y_batch_time[0][0], '<M8[us]')}\n\tLast datetime in first batch: {np.array(y_batch_time[0][-1], '<M8[us]')}\n"
+              f"\tFirst datetime in last batch: {np.array(y_batch_time[-1][0], '<M8[us]')}\n\tLast datetime in last batch: {np.array(y_batch_time[-1][-1], '<M8[us]')}\n"
+            f"\t\tTotal steps within a batch: {within_batch_diff}\tConfig Horizon: {self.config.forecast_horizon}\n"
+            f"\t\tTotal steps across batches: {across_batch_diff}\tConfig Batch Size: {self.config.batch_size}\n"
+            f"\tNOTE: If 'TOTAL STEPS ACROSS BATCHES' do not match the expected numbers, this is ok for training loop as the dataloader is set to 'shuffle=True'.")
+        user_input = input("Press Enter to continue to next iteration or enter 'q' to skip this: ")
+        if user_input.lower() == 'q':
+            return False
+        return True
