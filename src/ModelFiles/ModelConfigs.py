@@ -4,7 +4,7 @@ from ModelFiles.ModelEnums import *
 __all__ = ["TransformersConfig", "SARIMAXConfig", "LSTMConfig", "HORIZONS", "SEEDS"]
 
 HORIZONS = [48, 336, 720]
-SEEDS = [31415, 27182, 14142, 17320, 22360, 57721, 66987, 11235, 98765, 43210]
+SEEDS = [31415]#, 27182, 14142, 17320, 22360, 57721, 66987, 11235, 98765, 43210]
 
 @dataclass
 class Config:
@@ -48,6 +48,7 @@ class GradientBoostingConfig(Config):
             "target_col": self.target_col,
             "used_log_target": self.used_log_target,
             "all_feature_cols": self.all_feature_cols,
+            "scale": self.scale,
             "n_estimators": self.n_estimators,
             "learning_rate": self.learning_rate,
             "max_depth": self.max_depth,
@@ -77,6 +78,7 @@ class SARIMAXConfig(Config):
             "target_col": self.target_col,
             "used_log_target": self.used_log_target,
             "all_feature_cols": self.all_feature_cols,
+            "scale": self.scale,
             "horizon": self.forecast_horizon,
             "training_size": self.lookback_window,
             "target_lags": self.target_lags,
@@ -144,6 +146,7 @@ class TransformersConfig(DeepLearningConfig):
             "target_col": self.target_col,
             "used_log_target": self.used_log_target,
             "all_feature_cols": self.all_feature_cols,
+            "scale": self.scale,
             "horizon": self.forecast_horizon,
             "lookback": self.lookback_window,
             "target_lags": self.target_lags,
@@ -184,6 +187,7 @@ class LSTMConfig(DeepLearningConfig):
             "target_col": self.target_col,
             "used_log_target": self.used_log_target,
             "all_feature_cols": self.all_feature_cols,
+            "scale": self.scale,
             "horizon": self.forecast_horizon,
             "lookback": self.lookback_window,
             "target_lags": self.target_lags,

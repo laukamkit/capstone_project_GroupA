@@ -51,7 +51,9 @@ class GradientBoostingModel(BaseModel):
             print(f"Saved trained model to gradient_boosting_models/{self.config.task_id}_model.pkl")
         os.makedirs(os.path.join(NSWDataLoader.output_dir, "gradient_boosting_results"), exist_ok=True)
         if self.config.save_training_log:
-            progress_log_df.to_csv(os.path.join(os.path.join(NSWDataLoader.output_dir, "gradient_boosting_results"), f"{self.config.task_id}_fitting_log.csv"), index=False)
+            _gb_fit_log_path = os.path.join(NSWDataLoader.output_dir, "gradient_boosting_results", f"{self.config.task_id}_fitting_log.csv")
+            _gb_fit_log_exists = os.path.isfile(_gb_fit_log_path)
+            progress_log_df.to_csv(_gb_fit_log_path, mode='a' if _gb_fit_log_exists else 'w', header=not _gb_fit_log_exists, index=False)
         return self.model
 
     def evaluate_model(self, model_fit: GradientBoostingRegressor | str | None, test_mode=0):
@@ -146,8 +148,12 @@ class GradientBoostingModel(BaseModel):
         if test_mode:
             os.makedirs(os.path.join(NSWDataLoader.output_dir, "gradient_boosting_results"), exist_ok=True)
             if self.config.save_test_results:
-                results_df.to_csv(os.path.join(NSWDataLoader.output_dir, "gradient_boosting_results", f"{self.config.task_id}_test_results.csv"), index=False)
-            metrics_df.to_csv(os.path.join(NSWDataLoader.output_dir, "gradient_boosting_results", f"{self.config.task_id}_test_metrics.csv"), index=False)
+                _gb_res_path = os.path.join(NSWDataLoader.output_dir, "gradient_boosting_results", f"{self.config.task_id}_test_results.csv")
+                _gb_res_exists = os.path.isfile(_gb_res_path)
+                results_df.to_csv(_gb_res_path, mode='a' if _gb_res_exists else 'w', header=not _gb_res_exists, index=False)
+            _gb_met_path = os.path.join(NSWDataLoader.output_dir, "gradient_boosting_results", f"{self.config.task_id}_test_metrics.csv")
+            _gb_met_exists = os.path.isfile(_gb_met_path)
+            metrics_df.to_csv(_gb_met_path, mode='a' if _gb_met_exists else 'w', header=not _gb_met_exists, index=False)
             print(f"Saved detailed rolling forecast results to gradient_boosting_results/{self.config.task_id}_test_results.csv")
             print(f"Saved metrics to gradient_boosting_results/{self.config.task_id}_test_metrics.csv")
         return all_actuals, all_preds, rmse, mae
@@ -354,7 +360,9 @@ class LSTMModel(DeepLearningModel):
                 "early_stop_epoch": [self.early_stop_epoch] * self.total_epochs_run,
             }
             progress_log_df = pd.DataFrame(progress_log)
-            progress_log_df.to_csv(os.path.join(results_path, f"{self.config.task_id}_fitting_log.csv"), index=False) 
+            _lstm_fit_log_path = os.path.join(results_path, f"{self.config.task_id}_fitting_log.csv")
+            _lstm_fit_log_exists = os.path.isfile(_lstm_fit_log_path)
+            progress_log_df.to_csv(_lstm_fit_log_path, mode='a' if _lstm_fit_log_exists else 'w', header=not _lstm_fit_log_exists, index=False)
 
         # if show_live_plots:
         #     plot_training_history(train_losses, val_losses, title=title)
@@ -411,7 +419,7 @@ class LSTMModel(DeepLearningModel):
                 y_pred = self.model(X_batch).cpu().numpy()
                 y_pred_raw.extend(y_pred)
                 y_actual_raw.extend(y_batch.numpy())
-                batch_window = np.arange(y_batch[:, -1].numpy().shape[0])
+                batch_window = np.arange(y_batch.shape[0])
                 ts = y_batch_time[:, -1].detach().numpy()
                 current_batch_number = np.zeros(ts.shape)+i
                 batch_windows.extend(batch_window)
@@ -481,8 +489,12 @@ class LSTMModel(DeepLearningModel):
         if not os.path.exists(results_path):
             os.makedirs(results_path)
         if self.config.save_test_results:
-            results_df.to_csv(os.path.join(results_path, f"{self.config.task_id}_{self.config.model_type.value}_test_results.csv"), index=False)
-        metrics_df.to_csv(os.path.join(results_path, f"{self.config.task_id}_{self.config.model_type.value}_test_metrics.csv"), index=False)
+            _lstm_res_path = os.path.join(results_path, f"{self.config.task_id}_{self.config.model_type.value}_test_results.csv")
+            _lstm_res_exists = os.path.isfile(_lstm_res_path)
+            results_df.to_csv(_lstm_res_path, mode='a' if _lstm_res_exists else 'w', header=not _lstm_res_exists, index=False)
+        _lstm_met_path = os.path.join(results_path, f"{self.config.task_id}_{self.config.model_type.value}_test_metrics.csv")
+        _lstm_met_exists = os.path.isfile(_lstm_met_path)
+        metrics_df.to_csv(_lstm_met_path, mode='a' if _lstm_met_exists else 'w', header=not _lstm_met_exists, index=False)
         print(f"Saved detailed rolling forecast results to {results_path}/{self.config.task_id}_{self.config.model_type.value}_test_results.csv")
         return eval_dict
     
@@ -662,7 +674,9 @@ class PatchTSTModel(DeepLearningModel):
         self.model.load_state_dict(torch.load(best_model_path))
         fitting_progress_log_df = pd.DataFrame(progress_log)
         if self.config.save_training_log:
-            fitting_progress_log_df.to_csv(os.path.join(results_path, f"{self.config.task_id}_fitting_log.csv"), index=False)
+            _ptst_fit_log_path = os.path.join(results_path, f"{self.config.task_id}_fitting_log.csv")
+            _ptst_fit_log_exists = os.path.isfile(_ptst_fit_log_path)
+            fitting_progress_log_df.to_csv(_ptst_fit_log_path, mode='a' if _ptst_fit_log_exists else 'w', header=not _ptst_fit_log_exists, index=False)
         return self.model
     
     def evaluate_model(self, test_mode=0):
@@ -771,8 +785,12 @@ class PatchTSTModel(DeepLearningModel):
         if test_mode:
             print(f"Test Results - MAE: {mae:.2f} MW | RMSE: {rmse:.2f} MW | MSE: {mse:.2f} MW^2")
             if self.config.save_test_results:
-                results_df.to_csv(os.path.join(results_path, f"{self.config.task_id}_test_results.csv"), index=False)
-            metrics_df.to_csv(os.path.join(results_path, f"{self.config.task_id}_test_metrics.csv"), index=False)
+                _ptst_res_path = os.path.join(results_path, f"{self.config.task_id}_test_results.csv")
+                _ptst_res_exists = os.path.isfile(_ptst_res_path)
+                results_df.to_csv(_ptst_res_path, mode='a' if _ptst_res_exists else 'w', header=not _ptst_res_exists, index=False)
+            _ptst_met_path = os.path.join(results_path, f"{self.config.task_id}_test_metrics.csv")
+            _ptst_met_exists = os.path.isfile(_ptst_met_path)
+            metrics_df.to_csv(_ptst_met_path, mode='a' if _ptst_met_exists else 'w', header=not _ptst_met_exists, index=False)
             print(f"Saved detailed rolling forecast results to {results_path}/{self.config.task_id}_test_results.csv")
         else:
             self.model.train()
@@ -877,7 +895,9 @@ class SarimaxModel(BaseModel):
         if self.config.save_training_log:
             fitting_progress_log_df = pd.DataFrame(progress_log)
             os.makedirs(os.path.join(NSWDataLoader.output_dir, "sarimax_results"), exist_ok=True)
-            fitting_progress_log_df.to_csv(os.path.join(NSWDataLoader.output_dir, "sarimax_results", f"{self.config.task_id}_fitting_log.csv"), index=False)
+            _sarimax_fit_log_path = os.path.join(NSWDataLoader.output_dir, "sarimax_results", f"{self.config.task_id}_fitting_log.csv")
+            _sarimax_fit_log_exists = os.path.isfile(_sarimax_fit_log_path)
+            fitting_progress_log_df.to_csv(_sarimax_fit_log_path, mode='a' if _sarimax_fit_log_exists else 'w', header=not _sarimax_fit_log_exists, index=False)
         os.makedirs(os.path.join(NSWDataLoader.output_dir, "sarimax_models"), exist_ok=True)
         self.best_model.save(os.path.join(NSWDataLoader.output_dir, "sarimax_models", f"{self.config.task_id}_model.pkl"))
         print("Training complete. Saved best model and fitting progress log.")
@@ -977,8 +997,12 @@ class SarimaxModel(BaseModel):
         if test_mode:
             os.makedirs(os.path.join(NSWDataLoader.output_dir, "sarimax_results"), exist_ok=True)
             if self.config.save_test_results:
-                results_df.to_csv(os.path.join(NSWDataLoader.output_dir, "sarimax_results", f"{self.config.task_id}_test_results.csv"), index=False)
-            metrics_df.to_csv(os.path.join(NSWDataLoader.output_dir, "sarimax_results", f"{self.config.task_id}_test_metrics.csv"), index=False)
+                _sarimax_res_path = os.path.join(NSWDataLoader.output_dir, "sarimax_results", f"{self.config.task_id}_test_results.csv")
+                _sarimax_res_exists = os.path.isfile(_sarimax_res_path)
+                results_df.to_csv(_sarimax_res_path, mode='a' if _sarimax_res_exists else 'w', header=not _sarimax_res_exists, index=False)
+            _sarimax_met_path = os.path.join(NSWDataLoader.output_dir, "sarimax_results", f"{self.config.task_id}_test_metrics.csv")
+            _sarimax_met_exists = os.path.isfile(_sarimax_met_path)
+            metrics_df.to_csv(_sarimax_met_path, mode='a' if _sarimax_met_exists else 'w', header=not _sarimax_met_exists, index=False)
             print(f"Saved detailed rolling forecast results to sarimax_results/{self.config.task_id}_test_results.csv")
         return all_origins, all_timestamps, all_actuals, all_predictions, mae, rmse, mse
      
