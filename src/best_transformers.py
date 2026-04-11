@@ -3,8 +3,11 @@ from ModelFiles.ModelConfigs import TransformersConfig, HORIZONS, SEEDS
 from ModelFiles.ModelEnums import TransformerModelType
 from ModelFiles.ModelPlots import *
 
-CONTEXT_LENGTHS = [144, 336, 720]
+CONTEXT_LENGTHS = [336, 720]
 EVAL_STEP_SIZE = 12
+NUM_EPOCHS = 2
+PATIENCE = 10
+DEBUG = False
 for horizon in HORIZONS:
     for context_length in CONTEXT_LENGTHS:
         for seed in SEEDS:
@@ -30,15 +33,15 @@ for horizon in HORIZONS:
             use_gpu=True,
             time_encoding='timeF',
             shuffle_flag=True,
-            training_epochs=3,
+            training_epochs=NUM_EPOCHS,
             batch_size=64,
             learning_rate=0.0001,
             output_attention=False,
             lradj='TST',
-            patience=10,
+            patience=PATIENCE,
             seed=seed,
             eval_step_size=EVAL_STEP_SIZE,
-            debug=False,
+            debug=DEBUG,
             save_training_log=True,
         )
         patch_tst_model = PatchTSTModel(patchtst_config)

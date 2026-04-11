@@ -11,6 +11,8 @@ class SequenceForecaster(nn.Module):
         input_size,
         hidden_size,
         num_layers,
+        horizon,
+        forecast_last_step_only=True,
         dropout=0.0,
         bidirectional=False,
         use_mlp_head=False,
@@ -21,7 +23,8 @@ class SequenceForecaster(nn.Module):
         self.bidirectional = bidirectional
         self.num_directions = 2 if bidirectional else 1
         self.use_mlp_head = use_mlp_head
-
+        self.horizon = horizon
+        self.forecast_last_step_only = forecast_last_step_only
         lstm_dropout = dropout if num_layers > 1 else 0.0
 
         self.lstm = nn.LSTM(
@@ -34,24 +37,25 @@ class SequenceForecaster(nn.Module):
         )
 
         self.dropout = nn.Dropout(dropout)
-
         output_dim = hidden_size * self.num_directions
 
         if use_mlp_head:
             self.fc = nn.Sequential(
                 nn.Linear(output_dim, mlp_hidden_size),
                 nn.ReLU(),
-                nn.Linear(mlp_hidden_size, 1),
+                nn.Linear(mlp_hidden_size, horizon if not forecast_last_step_only else 1),
             )
         else:
-            self.fc = nn.Linear(output_dim, 1)
+            self.fc = nn.Linear(output_dim, horizon if not forecast_last_step_only else 1)
 
     def forward(self, x):
         lstm_out, _ = self.lstm(x)
         last_out = lstm_out[:, -1, :]
         last_out = self.dropout(last_out)
         out = self.fc(last_out)
-        return out.view(-1)
+        if self.forecast_last_step_only:
+            return out.view(-1)
+        return out
 
 class AttentionBiLSTMForecaster(nn.Module):
     """
@@ -63,6 +67,8 @@ class AttentionBiLSTMForecaster(nn.Module):
         input_size,
         hidden_size,
         num_layers,
+        horizon,
+        forecast_last_step_only=True,
         dropout=0.0,
         bidirectional=True,
         use_mlp_head=False,
@@ -73,7 +79,8 @@ class AttentionBiLSTMForecaster(nn.Module):
         self.bidirectional = bidirectional
         self.num_directions = 2 if bidirectional else 1
         self.use_mlp_head = use_mlp_head
-
+        self.horizon = horizon
+        self.forecast_last_step_only = forecast_last_step_only
         lstm_dropout = dropout if num_layers > 1 else 0.0
         output_dim = hidden_size * self.num_directions
 
@@ -93,22 +100,22 @@ class AttentionBiLSTMForecaster(nn.Module):
             self.fc = nn.Sequential(
                 nn.Linear(output_dim, mlp_hidden_size),
                 nn.ReLU(),
-                nn.Linear(mlp_hidden_size, 1),
+                nn.Linear(mlp_hidden_size, horizon if not self.forecast_last_step_only else 1),
             )
         else:
-            self.fc = nn.Linear(output_dim, 1)
+            self.fc = nn.Linear(output_dim, horizon if not self.forecast_last_step_only else 1)
 
     def forward(self, x, return_attention=False):
         lstm_out, _ = self.lstm(x)
-
-        # Optional scaling (stability improvement)
         attn_scores = self.attention(lstm_out) / (lstm_out.size(-1) ** 0.5)
         attn_weights = torch.softmax(attn_scores, dim=1)
 
         context = torch.sum(attn_weights * lstm_out, dim=1)
         context = self.dropout(context)
 
-        out = self.fc(context).view(-1)
+        out = self.fc(context)
+        if self.forecast_last_step_only:
+            out = out.view(-1)
 
         if return_attention:
             return out, attn_weights.squeeze(-1)
@@ -125,6 +132,8 @@ class MultiHeadAttentionBiLSTMForecaster(nn.Module):
         input_size,
         hidden_size,
         num_layers,
+        horizon,
+        forecast_last_step_only=True,
         dropout=0.0,
         bidirectional=True,
         use_mlp_head=False,
@@ -136,6 +145,8 @@ class MultiHeadAttentionBiLSTMForecaster(nn.Module):
         self.bidirectional = bidirectional
         self.num_directions = 2 if bidirectional else 1
         self.num_attention_heads = num_attention_heads
+        self.horizon = horizon
+        self.forecast_last_step_only = forecast_last_step_only
 
         lstm_dropout = dropout if num_layers > 1 else 0.0
         output_dim = hidden_size * self.num_directions
@@ -159,10 +170,11 @@ class MultiHeadAttentionBiLSTMForecaster(nn.Module):
             self.fc = nn.Sequential(
                 nn.Linear(combined_dim, mlp_hidden_size),
                 nn.ReLU(),
-                nn.Linear(mlp_hidden_size, 1),
+                nn.Dropout(dropout),
+                nn.Linear(mlp_hidden_size, horizon if not self.forecast_last_step_only else 1),
             )
         else:
-            self.fc = nn.Linear(combined_dim, 1)
+            self.fc = nn.Linear(combined_dim, horizon if not self.forecast_last_step_only else 1)
 
     def forward(self, x, return_attention=False):
         # lstm_out: (batch, seq_len, output_dim)
@@ -190,7 +202,9 @@ class MultiHeadAttentionBiLSTMForecaster(nn.Module):
         context = context.reshape(context.size(0), -1)
         context = self.dropout(context)
 
-        out = self.fc(context).view(-1)
+        out = self.fc(context)
+        if self.forecast_last_step_only:
+            out = out.view(-1)
 
         if return_attention:
             # return attention as (batch, num_heads, seq_len) for easier plotting

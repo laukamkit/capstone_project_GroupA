@@ -7,6 +7,8 @@ CONTEXT_LENGTH = None # GB we are fitting entire results set. Need to find liter
 HORIZONS = [336,720]
 skip = [57721, 66987, 11235, 98765, 43210]
 SEEDS = [31415, 27182, 14142, 17320, 22360, 57721, 66987, 11235, 98765, 43210]
+N_ESTIMATORS = 10
+DEBUG = True
 for horizon in HORIZONS:
     for seed in SEEDS:
         if seed in skip and horizon == 336:
@@ -20,13 +22,15 @@ for horizon in HORIZONS:
             target_mas=[6, 48],
             used_log_target=True,
             feature_cols=['TEMPERATURE','TEMP_SQUARED', 'HOUR', 'DAYOFWEEK', 'IS_WEEKEND'],
-            n_estimators=300,
+            n_estimators=N_ESTIMATORS,
             learning_rate=0.1,
             max_depth=3,
             verbose=1,
             scale=True,
             seed=seed,
             eval_step_size=96, # This is the step size to use when evaluating against validation or test set.
+            debug=DEBUG,
+            save_training_log=True,
         )
         print(f"\nRunning Gradient Boosting with config: {gb_config}\n")
         gb_model = GradientBoostingModel(gb_config, add_lag_features)

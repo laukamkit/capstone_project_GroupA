@@ -29,7 +29,6 @@ class BaseDeepLearningNSWDataSet(Dataset):
         """Shared border/slicing logic for all subclasses."""
         df_raw = pd.concat([self.train_df, self.val_df, self.test_df], axis=0).reset_index() # reset index to bring out date column for time encoding for TimeXer
         self.df_raw = df_raw[[self.config.date_col] + [self.config.target_col] + self.config.all_feature_cols]
-        
         num_train = len(self.train_df)
         num_test = len(self.test_df)
         num_vali = len(self.val_df)
@@ -38,7 +37,7 @@ class BaseDeepLearningNSWDataSet(Dataset):
         border2s = [num_train, num_train + num_vali, len(self.df_raw)]
         self.border1 = border1s[self.set_type]
         self.border2 = border2s[self.set_type]
-        self.data_x, self.data_y, self.time_stamp, self.data_stamp = self._set_data()
+        self.get_item_data_x, self.get_item_data_y, self.get_item_time_stamp, self.get_item_data_stamp = self._set_data()
 
     def _set_data(self) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         raise NotImplementedError("This method should be implemented by subclasses if they want to use time encoding features.")
@@ -46,27 +45,27 @@ class BaseDeepLearningNSWDataSet(Dataset):
     def __getitem__(self, index):
         s_begin = index
         s_end = s_begin + self.config.lookback_window
-        r_begin = s_end - 0
-        r_end = r_begin + 0 + self.config.forecast_horizon
+        r_begin = s_end
+        r_end = r_begin + self.config.forecast_horizon
 
-        seq_x = self.data_x[s_begin:s_end]
-        seq_y = self.data_y[r_begin:r_end]
-        if self.data_stamp is not None:
-            seq_x_mark = self.data_stamp[s_begin:s_end]
-            seq_y_mark = self.data_stamp[r_begin:r_end]
+        seq_x = self.get_item_data_x[s_begin:s_end]
+        seq_y = self.get_item_data_y[r_begin:r_end]
+        if self.get_item_data_stamp is not None:
+            seq_x_mark = self.get_item_data_stamp[s_begin:s_end]
+            seq_y_mark = self.get_item_data_stamp[r_begin:r_end]
         else:
             seq_x_mark = np.zeros((len(seq_x), 1)) # dummy time encoding features if not using time encoding, to maintain consistent return type
             seq_y_mark = np.zeros((len(seq_y), 1)) # dummy time encoding features if not using time encoding, to maintain consistent return type
-        seq_x_time = self.time_stamp[s_begin:s_end]
-        seq_y_time = self.time_stamp[r_begin:r_end]
+        seq_x_time = self.get_item_time_stamp[s_begin:s_end]
+        seq_y_time = self.get_item_time_stamp[r_begin:r_end]
 
         return seq_x.copy(), seq_y.copy(), seq_x_mark.copy() if seq_x_mark is not None else None, seq_y_mark.copy() if seq_y_mark is not None else None, seq_x_time.copy(), seq_y_time.copy()
 
     def __len__(self):
-        return len(self.data_x) - self.config.lookback_window - self.config.forecast_horizon + 1
+        return len(self.get_item_data_x) - self.config.lookback_window - self.config.forecast_horizon + 1
 
     def shape(self):
-        return self.data_x.shape, self.data_y.shape   
+        return self.get_item_data_x.shape, self.get_item_data_y.shape
 
 class TransformersDataSet(BaseDeepLearningNSWDataSet):
     """For PatchTSTConfig and LSTMConfig that require lookback windows"""
@@ -85,16 +84,6 @@ class TransformersDataSet(BaseDeepLearningNSWDataSet):
         super().__read_data__()
 
     def _set_data(self):
-        if self.config.variate == 'M' or self.config.variate == 'MS':
-            cols_data = self.df_raw.columns[1:]
-            df_data = self.df_raw[cols_data]
-        elif self.config.variate == 'S':
-            df_data = self.df_raw[[self.config.target_col]]
-        else:
-            df_data = self.df_raw.iloc[:, 1:]
-
-        data = df_data.values
-
         df_stamp = self.df_raw[[self.config.date_col]][self.border1:self.border2]
         df_stamp[self.config.date_col] = pd.to_datetime(df_stamp[self.config.date_col])
         if self.timeenc == 0:
@@ -106,12 +95,22 @@ class TransformersDataSet(BaseDeepLearningNSWDataSet):
         elif self.timeenc == 1:
             data_stamp = time_features(pd.to_datetime(df_stamp[self.config.date_col].values), freq='30min')
             data_stamp = data_stamp.transpose(1, 0)
+ 
+        if self.config.variate == 'M' or self.config.variate == 'MS':
+            df_data = self.df_raw
+        else: # for self.config.variate == 'S'
+            df_data = self.df_raw[[self.config.date_col,self.config.target_col]]
 
-        data_x = data[self.border1:self.border2]
-        data_y = data[self.border1:self.border2]
-        time_stamp = df_stamp[self.config.date_col].values.astype(np.int64)
-        data_stamp = data_stamp
-        return data_x, data_y, time_stamp, data_stamp
+        # since transformers can output multivariate forecasts, x and y dfs have same columns.
+        # we create separate reference dfs for consistency.
+        self.reference_data_x_df = df_data.iloc[self.border1:self.border2]
+        self.reference_data_y_df = df_data.iloc[self.border1:self.border2]
+            
+        get_item_data_x = self.reference_data_x_df.iloc[:, 1:].values.astype(np.float32) # exclude date_col in get_item
+        get_item_data_y = self.reference_data_y_df.iloc[:, 1:].values.astype(np.float32) # exclude date_col in get_item
+        get_item_time_stamp = df_stamp[self.config.date_col].values.astype(np.int64)
+        get_item_data_stamp = data_stamp
+        return get_item_data_x, get_item_data_y, get_item_time_stamp, get_item_data_stamp
 
 class LSTMDataSet(BaseDeepLearningNSWDataSet):
     """For PatchTSTConfig and LSTMConfig that require lookback windows"""
@@ -129,14 +128,14 @@ class LSTMDataSet(BaseDeepLearningNSWDataSet):
         super().__read_data__()
 
     def _set_data(self):
-        df_data = self.df_raw.iloc[:, 1:]
-        data = df_data.values
-
         df_stamp = self.df_raw[[self.config.date_col]][self.border1:self.border2]
         df_stamp[self.config.date_col] = pd.to_datetime(df_stamp[self.config.date_col])
 
-        data_x = data[self.border1:self.border2]
-        data_y = data[self.border1:self.border2, 0] # only predict target column for LSTM, which is the first column after date_col in df_raw. This is because LSTMs are univariate in our implementation, while PatchTST can be multivariate.
-        time_stamp = df_stamp[self.config.date_col].values.astype(np.int64)
-        data_stamp = None # LSTMs do not use time encoding features, but we return None for consistency of the return type across datasets.
-        return data_x.astype(np.float32), data_y.astype(np.float32), time_stamp, data_stamp
+        self.reference_data_x_df = self.df_raw.iloc[self.border1:self.border2]
+        self.reference_data_y_df = self.df_raw.iloc[self.border1:self.border2][[self.config.date_col,self.config.target_col]] # only predict target column for LSTM, which is the first column after date_col in df_raw. This is because LSTMs are univariate in our implementation, while PatchTST can be multivariate.
+        
+        get_item_data_x = self.reference_data_x_df.drop(columns=self.config.date_col).values.astype(np.float32) # exclude date_col in get_item
+        get_item_data_y = self.reference_data_y_df.drop(columns=self.config.date_col).values.astype(np.float32) # exclude date_col in get_item
+        get_item_time_stamp = df_stamp[self.config.date_col].values.astype(np.int64)
+        get_item_data_stamp = None # LSTMs do not use time encoding features, but we return None for consistency of the return type across datasets.
+        return get_item_data_x, get_item_data_y, get_item_time_stamp, get_item_data_stamp

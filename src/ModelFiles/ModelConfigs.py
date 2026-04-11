@@ -164,6 +164,7 @@ class LSTMConfig(DeepLearningConfig):
     scheduler_patience: int = 5
     scheduler_step_size: int = 10
     scheduler_gamma: float = 0.5
+    forecast_last_step_only: bool = True # if True, only predict the last step in the forecast horizon. If False, predict all steps in the forecast horizon.
 
     @property
     def config_params_to_results(self) -> dict:

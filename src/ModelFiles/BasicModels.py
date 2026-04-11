@@ -14,9 +14,12 @@ class BaseModel:
         training_data = self.train_scaled if self.config.scale else self.train
         validation_data = self.val_scaled if self.config.scale else self.validation
         test_data = self.test_scaled if self.config.scale else self.test
-        self.training_data = func(training_data, config.target_col, config.target_lags, config.target_mas, config.feature_lag_cols) if func else training_data
-        self.validation_data = func(validation_data, config.target_col, config.target_lags, config.target_mas, config.feature_lag_cols) if func else validation_data
-        self.test_data = func(test_data, config.target_col, config.target_lags, config.target_mas, config.feature_lag_cols) if func else test_data
+        # note if func involves creating lag features, some rows will be dropped due to NaN values
+        full_data = pd.concat([training_data, validation_data, test_data], axis=0)
+        full_data = func(full_data, config.target_col, config.target_lags, config.target_mas, config.feature_lag_cols) if func else full_data
+        self.training_data = full_data.iloc[:len(training_data)].dropna()
+        self.validation_data = full_data.iloc[len(training_data):len(training_data)+len(validation_data)]
+        self.test_data = full_data.iloc[len(training_data)+len(validation_data):]
         self.val_step_size = min(config.eval_step_size, config.forecast_horizon)
         if self.config.seed is not None:
             self.set_seed(self.config.seed)
@@ -43,7 +46,36 @@ class BaseModel:
     
     def evaluate_model(self):
         raise NotImplementedError
-  
+    
+    def _debug_batch_timing(self, loop_name, exog_series: pd.DataFrame | None, actuals_series: pd.Series):
+        print("="*50)
+        print(f"{loop_name} Loop Debug Info:")
+        print("="*50)
+        y_times = np.array(actuals_series.index, dtype='datetime64[us]')
+        step = np.timedelta64(30, 'm')
+        val_step_size = min(self.val_step_size, actuals_series.shape[0]) # in case eval_step_size is greater than number of time steps in batch
+        y_within_batch_diff = int((y_times[-1]-y_times[0])/step) + 1
+        print("="*20 + f"ACTUALS_SERIES SHAPE: {actuals_series.shape}" + "="*20 )
+        print(f"\tactuals_series name: {actuals_series.name}")
+        print(f"\tFirst datetime in target vector: {np.array(actuals_series.index[0], '<M8[us]')}\n\tLast datetime in target vector: {np.array(actuals_series.index[-1], '<M8[us]')}\n"
+            f"\t\tTotal steps within target vector: {y_within_batch_diff}\tConfig Horizon: {self.config.forecast_horizon}\n"
+            f"\t\tVal Step Size: {val_step_size}\t\t\tConfig Eval Step Size: {self.config.eval_step_size}\n"
+            f"\t\tEvaluation Step Size: {val_step_size} (should be steps from last debug log to this one.\n"
+            f"\tNOTE: Dates should be consecutive and match the val_step_size where val_step_size <= horizon.")
+        if exog_series is not None:
+            x_times = np.array(exog_series.index, dtype='datetime64[us]')
+            x_within_batch_diff = int((x_times[-1]-x_times[0])/step) + 1
+            print("="*20 + f"EXOG_SERIES SHAPE: {exog_series.shape}" + "="*20)
+            print(f"\tExogenous features: {exog_series.columns.tolist()}")
+            print(f"\tFirst datetime in exogenous features: {np.array(exog_series.index[0], '<M8[us]')}\n\tLast datetime in exogenous features: {np.array(exog_series.index[-1], '<M8[us]')}\n"
+                f"\t\tTotal steps within exogenous features: {x_within_batch_diff}\tConfig Horizon: {self.config.forecast_horizon}\n"
+                f"\t\tEvaluation Step Size: {val_step_size} (should be steps from last debug log to this one)\n"
+                f"\tNOTE: Dates should be consecutive and match the horizon.")
+        user_input = input("Press Enter to continue to next iteration or enter 'q' to skip this: ")
+        if user_input.lower() == 'q':
+            return False
+        return True
+
 class DeepLearningModel(BaseModel):
     def __init__(self, config: DeepLearningConfig, func: Callable[[pd.DataFrame, str, list[int], list[int], list[tuple[str, int]]], pd.DataFrame] | None = None):
         super().__init__(config, func)
@@ -63,19 +95,31 @@ class DeepLearningModel(BaseModel):
             print('Use CPU')
         return device
     
-    def _debug_batch_timing(self, loop_name, y_batch_time):
+    def _debug_batch_timing(self, loop_name, x_batch_time, y_batch_time):
         print("="*50)
         print(f"{loop_name} Loop Debug Info:")
         print("="*50)
-        times = np.array(y_batch_time, dtype='datetime64[us]')
+        x_times = np.array(x_batch_time, dtype='datetime64[us]')
+        y_times = np.array(y_batch_time, dtype='datetime64[us]')
         step = np.timedelta64(30, 'm')
         val_step_size = min(self.val_step_size, y_batch_time.shape[1]) # in case eval_step_size is greater than number of time steps in batch
-        within_batch_diff = int((times[0, -1] - times[0, 0]) / step) + 1
-        across_batch_diff = ((float((times[-1, 0] - times[0, 0]) / step)) / val_step_size) + 1
+        y_within_batch_diff = int((y_times[0, -1] - y_times[0, 0]) / step) + 1
+        y_across_batch_diff = ((int((y_times[-1, 0] - y_times[0, 0]) / step)) / val_step_size) + 1
+        x_within_batch_diff = int((x_times[0, -1] - x_times[0, 0]) / step) + 1
+        x_across_batch_diff = ((int((x_times[-1, 0] - x_times[0, 0]) / step)) / val_step_size) + 1
+        print("="*20 + f"Y_BATCH_TIME SHAPE: {y_batch_time.shape}" + "="*20)
         print(f"\tFirst datetime in first batch: {np.array(y_batch_time[0][0], '<M8[us]')}\n\tLast datetime in first batch: {np.array(y_batch_time[0][-1], '<M8[us]')}\n"
               f"\tFirst datetime in last batch: {np.array(y_batch_time[-1][0], '<M8[us]')}\n\tLast datetime in last batch: {np.array(y_batch_time[-1][-1], '<M8[us]')}\n"
-            f"\t\tTotal steps within a batch: {within_batch_diff}\tConfig Horizon: {self.config.forecast_horizon}\n"
-            f"\t\tTotal steps across batches: {across_batch_diff}\tConfig Batch Size: {self.config.batch_size}\n"
+            f"\t\tTotal steps within a batch: {y_within_batch_diff}\t\t\tConfig Horizon: {self.config.forecast_horizon}\n"
+            f"\t\tTotal steps across batches: {y_across_batch_diff:.0f}\t\tConfig Batch Size: {self.config.batch_size}\n"
+            f"\t\tEvaluation Step Size: {val_step_size} x {self.config.batch_size} = {val_step_size * self.config.batch_size:.0f} (should be steps from last debug log to this one)\n"
+            f"\tNOTE: If 'TOTAL STEPS ACROSS BATCHES' do not match the expected numbers, this is ok for training loop as the dataloader is set to 'shuffle=True'.")
+        print("="*20 + f"X_BATCH_TIME SHAPE: {x_batch_time.shape}" + "="*20)
+        print(f"\tFirst datetime in first batch: {np.array(x_batch_time[0][0], '<M8[us]')}\n\tLast datetime in first batch: {np.array(x_batch_time[0][-1], '<M8[us]')}\n"
+              f"\tFirst datetime in last batch: {np.array(x_batch_time[-1][0], '<M8[us]')}\n\tLast datetime in last batch: {np.array(x_batch_time[-1][-1], '<M8[us]')}\n"
+            f"\t\tTotal steps within a batch: {x_within_batch_diff}\t\t\tConfig Lookback: {self.config.lookback_window}\n"
+            f"\t\tTotal steps across batches: {x_across_batch_diff:.0f}\t\tConfig Batch Size: {self.config.batch_size}\n"
+            f"\t\tEvaluation Step Size: {val_step_size} x {self.config.batch_size} = {val_step_size * self.config.batch_size:.0f} or {val_step_size * self.config.batch_size/48:.0f} days (should be steps from last debug log to this one)\n"
             f"\tNOTE: If 'TOTAL STEPS ACROSS BATCHES' do not match the expected numbers, this is ok for training loop as the dataloader is set to 'shuffle=True'.")
         user_input = input("Press Enter to continue to next iteration or enter 'q' to skip this: ")
         if user_input.lower() == 'q':

@@ -2,11 +2,11 @@ from ModelFiles.GroupAModels import SarimaxModel
 from ModelFiles.ModelConfigs import SARIMAXConfig, HORIZONS, SEEDS
 from ModelFiles.ModelPlots import *
 
+# This is the number of most recent time steps to use for training.
 CONTEXT_LENGTHS = [720]
-
+# For SARIMAX, we are not doing multiple seeds since it is a deterministic model.
 for horizon in HORIZONS:
     for context_length in CONTEXT_LENGTHS:
-        # for seed in SEEDS: # For SARIMAX, we are not doing multiple seeds since it is a deterministic model. We can uncomment this loop if we want to do multiple runs with different random seeds for any reason (e.g., if we want to add some randomness in the future).
             sarimax_config = SARIMAXConfig(
                 task_id=f"sarimax_run_h{horizon}_c{context_length}",
                 forecast_horizon=horizon,
@@ -28,6 +28,7 @@ for horizon in HORIZONS:
                 seed=None,
                 save_training_log= True,
                 eval_step_size=48,
+                debug=True
             )
             sarimax_model = SarimaxModel(sarimax_config)
             sarimax_model.train_model()
