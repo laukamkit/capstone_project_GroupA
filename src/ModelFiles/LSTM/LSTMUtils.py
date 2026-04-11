@@ -135,9 +135,7 @@ def run_experiment(config: LSTMConfig, experiment_name=None, save_best_model=Tru
 
     lstm_model.model.load_state_dict(best_state)
 
-    eval_dict = lstm_model.evaluate_model(
-        tolerance_pct=10.0,
-    )
+    eval_dict = lstm_model.evaluate_model(tolerance_pct=10.0, test_mode=1)
 
     result = {
         "experiment_name": experiment_name,
