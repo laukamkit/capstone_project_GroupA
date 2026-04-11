@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from ModelFiles.GroupAModels import GradientBoostingModel
 from ModelFiles.ModelConfigs import GradientBoostingConfig, HORIZONS, SEEDS
 from ModelFiles.ModelPlots import *
@@ -5,18 +7,9 @@ from ModelFiles.LSTM.LSTMUtils import add_lag_features # shared utility function
 
 CONTEXT_LENGTH = None # GB we are fitting entire results set. Need to find literature to support this though.
 USE_LOG_TARGET = True
-EVAL_STEP_SIZE = 96
-N_ESTIMATORS = [100, 200, 300]
+EVAL_STEP_SIZE = 48
+N_ESTIMATORS = [100,200,300,600,1000,1500]
 DEBUG = False
-
-def make_task_id(config: GradientBoostingConfig, other_suffix: str = "") -> GradientBoostingConfig:
-    name = f"gb_run_h{config.forecast_horizon}_c{'None' if CONTEXT_LENGTH is None else CONTEXT_LENGTH}_s{config.seed}"
-    if USE_LOG_TARGET:
-        name += "_logtarget"
-    if other_suffix:
-        name += f"_{other_suffix}"
-    config.task_id = name
-    return config
 
 for n_estimator in N_ESTIMATORS:
     for horizon in HORIZONS:
@@ -27,7 +20,7 @@ for n_estimator in N_ESTIMATORS:
                 save_prediction_results = False
 
             gb_config = GradientBoostingConfig(
-                task_id=f"gb_run_h{horizon}_c{'None' if CONTEXT_LENGTH is None else CONTEXT_LENGTH}_s{seed}",
+                task_id=f"gb_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
                 forecast_horizon=horizon,
                 lookback_window=CONTEXT_LENGTH, # For Gradient Boosting, this is the number of most recent time steps to use for training.
                 target_col='LOG_TOTALDEMAND' if USE_LOG_TARGET else 'TOTALDEMAND',
@@ -46,7 +39,6 @@ for n_estimator in N_ESTIMATORS:
                 save_training_log=True,
                 save_test_results=save_prediction_results,
             )
-            gb_config = make_task_id(gb_config)
             print(f"\nRunning Gradient Boosting with config: {gb_config}\n")
             gb_model = GradientBoostingModel(gb_config, add_lag_features)
             gb_model.train_model()

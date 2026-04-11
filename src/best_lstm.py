@@ -1,27 +1,16 @@
+from datetime import datetime
+
 from ModelFiles.LSTM.LSTMUtils import *
 from ModelFiles.ModelConfigs import LSTMConfig, SEEDS
 from ModelFiles.ModelEnums import LSTMModelType
 from ModelFiles.ModelPlots import *
 
 use_log_target = True
-EVAL_STEP_SIZE = 96
+EVAL_STEP_SIZE = 48
 FORECAST_LAST_STEP_ONLY = [False, True]
 NUM_EPOCHS = 100
 PATIENCE = 10
 DEBUG = False
-
-def make_task_id(config: LSTMConfig, other_suffix: str = "") -> LSTMConfig:
-    name = f"{config.model_type.value}_h{config.forecast_horizon}_c{config.lookback_window}_s{config.seed}"
-    if use_log_target:
-        name += "_logtarget"
-    if config.forecast_last_step_only:
-        name += "_laststep"
-    else:
-        name += "_multistep"
-    if other_suffix:
-        name += f"_{other_suffix}"
-    config.task_id = name
-    return config
 
 for forecast_last_step_only in FORECAST_LAST_STEP_ONLY:
     for seed in SEEDS:
@@ -31,7 +20,7 @@ for forecast_last_step_only in FORECAST_LAST_STEP_ONLY:
             save_prediction_results = False
             
         biLSTM_h48_c168_config = LSTMConfig(
-            task_id= "ph",
+            task_id= f"biLSTM_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
             model_type= LSTMModelType.BILSTM,
             hidden_size= 128,
             num_layers= 2,
@@ -60,14 +49,12 @@ for forecast_last_step_only in FORECAST_LAST_STEP_ONLY:
             eval_step_size=EVAL_STEP_SIZE,
             debug= DEBUG,
         )
-        biLSTM_h48_c168_config = make_task_id(biLSTM_h48_c168_config)
-        experiment_name_h48_c168 = make_config_name(biLSTM_h48_c168_config)
         runs_df_h48_c168_artifact = run_experiment(config=biLSTM_h48_c168_config)
         print("=" * 200)
         print("\n")
 
         biLSTM_h336_c336_config = LSTMConfig(
-            task_id= "ph",
+            task_id= f"biLSTM_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
             model_type= LSTMModelType.BILSTM,
             hidden_size= 128,
             num_layers= 2,
@@ -96,14 +83,12 @@ for forecast_last_step_only in FORECAST_LAST_STEP_ONLY:
             forecast_last_step_only=forecast_last_step_only,
             debug= DEBUG,
         )
-        biLSTM_h336_c336_config = make_task_id(biLSTM_h336_c336_config)
-        experiment_name_h336_c336 = make_config_name(biLSTM_h336_c336_config)
         runs_df_h336_c336_artifacts = run_experiment(config=biLSTM_h336_c336_config)
         print("=" * 200)
         print("\n")
 
         biLSTM_h720_c720_config = LSTMConfig(
-            task_id= "ph",
+            task_id= f"biLSTM_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
             model_type= LSTMModelType.BILSTM,
             hidden_size= 128,
             num_layers= 2,
@@ -132,8 +117,6 @@ for forecast_last_step_only in FORECAST_LAST_STEP_ONLY:
             forecast_last_step_only=forecast_last_step_only,
             debug= DEBUG,
         )
-        biLSTM_h720_c720_config = make_task_id(biLSTM_h720_c720_config)
-        experiment_name_h720_c720 = make_config_name(biLSTM_h720_c720_config)
         runs_df_h720_c720_artifacts = run_experiment(config=biLSTM_h720_c720_config)
         print("=" * 200)
         print("\n")

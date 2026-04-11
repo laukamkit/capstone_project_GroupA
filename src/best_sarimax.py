@@ -1,27 +1,20 @@
+from datetime import datetime
+
 from ModelFiles.GroupAModels import SarimaxModel
-from ModelFiles.ModelConfigs import SARIMAXConfig, HORIZONS, SEEDS
+from ModelFiles.ModelConfigs import SARIMAXConfig, HORIZONS
 from ModelFiles.ModelPlots import *
 
 # This is the number of most recent time steps to use for training.
 CONTEXT_LENGTHS = [720, 1440]
 USE_LOG_TARGET = True
 DEBUG = False
-EVAL_STEP_SIZE = 96
-
-def make_task_id(config: SARIMAXConfig, other_suffix: str = "") -> SARIMAXConfig:
-    name = f"sarimax_run_h{config.forecast_horizon}_c{config.lookback_window}_s{config.seed}"
-    if USE_LOG_TARGET:
-        name += "_logtarget"
-    if other_suffix:
-        name += f"_{other_suffix}"
-    config.task_id = name
-    return config
+EVAL_STEP_SIZE = 48
 
 # For SARIMAX, we are not doing multiple seeds since it is a deterministic model.
 for horizon in HORIZONS:
     for context_length in CONTEXT_LENGTHS:
             sarimax_config = SARIMAXConfig(
-                task_id=f"sarimax_run_h{horizon}_c{context_length}",
+                task_id=f"sarimax_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
                 forecast_horizon=horizon,
                 lookback_window=context_length, # For SARIMAX, this is the number of most recent time steps to use for training.
                 target_col='LOG_TOTALDEMAND' if USE_LOG_TARGET else 'TOTALDEMAND',

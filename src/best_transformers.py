@@ -1,23 +1,15 @@
+from datetime import datetime
 from ModelFiles.GroupAModels import PatchTSTModel
 from ModelFiles.ModelConfigs import TransformersConfig, HORIZONS, SEEDS
 from ModelFiles.ModelEnums import TransformerModelType
 from ModelFiles.ModelPlots import *
 
 USE_LOG_TARGET = True
-CONTEXT_LENGTHS = [336, 512] # two variants tested in PatchTST paper
-EVAL_STEP_SIZE = 96
+CONTEXT_LENGTHS = [336, 512, 720] # two variants tested in PatchTST paper, 720 I added our own.
+EVAL_STEP_SIZE = 48
 NUM_EPOCHS = 100
 PATIENCE = 10
 DEBUG = False
-
-def make_task_id(config: TransformersConfig, other_suffix: str = "") -> TransformersConfig:
-    name = f"patchtst_run_h{config.forecast_horizon}_c{config.lookback_window}_s{config.seed}"
-    if USE_LOG_TARGET:
-        name += "_logtarget"
-    if other_suffix:
-        name += f"_{other_suffix}"
-    config.task_id = name
-    return config
 
 for horizon in HORIZONS:
     for context_length in CONTEXT_LENGTHS:
@@ -28,7 +20,7 @@ for horizon in HORIZONS:
                 save_prediction_results = False
 
             patchtst_config = TransformersConfig(
-                task_id=f"patchtst_run_h{horizon}_c{context_length}_s{seed}",
+                task_id=f"patchtst_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
                 model=TransformerModelType.PATCHTST,
                 forecast_horizon=horizon,
                 lookback_window=context_length,
@@ -61,8 +53,7 @@ for horizon in HORIZONS:
                 debug=DEBUG,
                 save_training_log=True,
             )
-        patch_tst_config = make_task_id(patchtst_config)
-        patch_tst_model = PatchTSTModel(patch_tst_config)
+        patch_tst_model = PatchTSTModel(patchtst_config)
         patch_tst_model.train_model()
         patch_tst_model.evaluate_model(test_mode=1)
         print("=" * 200)
