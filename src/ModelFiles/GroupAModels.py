@@ -398,7 +398,7 @@ class LSTMModel(DeepLearningModel):
         y_actual_raw = []
         timestamps = []
         batch_nums = []
-        batch_windows = []
+        horizon_windows = []
 
         with torch.no_grad():
             debug = self.config.debug
@@ -414,15 +414,21 @@ class LSTMModel(DeepLearningModel):
                     last_step = -1
                     # predicting only the last timestep in the forecast horizon
                     y_batch = y_batch[:, last_step, -1] # need last -1 to reshape from (batch_size, horizon, 1) to (batch_size, horizon)
+                    y_batch_time = y_batch_time[:, last_step]
                 else:
                     y_batch = y_batch[:, :, -1] # need last -1 to reshape from (batch_size, horizon, 1) to (batch_size, horizon)
+
                 y_pred = self.model(X_batch).cpu().numpy()
                 y_pred_raw.extend(y_pred)
                 y_actual_raw.extend(y_batch.numpy())
-                batch_window = np.arange(y_batch.shape[0])
-                ts = y_batch_time[:, -1].detach().numpy()
+                if y_batch.ndim == 2:
+                    horizon_window = np.zeros_like(y_batch) + np.arange(y_batch.shape[1])
+                else:  # forecast_last_step_only=True → y_batch is (batch_size,)
+                    horizon_window = np.zeros(y_batch.shape[0]) + (self.config.forecast_horizon - 1)  # all predictions are for the last step in the horizon
+
+                ts = y_batch_time.detach().numpy()
                 current_batch_number = np.zeros(ts.shape)+i
-                batch_windows.extend(batch_window)
+                horizon_windows.extend(horizon_window)
                 timestamps.extend(ts)
                 batch_nums.extend(current_batch_number)
 
@@ -432,7 +438,7 @@ class LSTMModel(DeepLearningModel):
         if test_mode == 0:
             return {"_": test_loss}
 
-        batch_windows = np.array(batch_windows).reshape(-1, 1)
+        horizon_windows = np.array(horizon_windows).reshape(-1, 1)
         timestamps = np.array(timestamps, dtype='<M8[us]').reshape(-1, 1)
         batch_nums = np.array(batch_nums).reshape(-1, 1)
 
@@ -447,7 +453,7 @@ class LSTMModel(DeepLearningModel):
 
         y_pred_real = y_pred_real.ravel()
         y_true_real = y_true_real.ravel()
-        batch_windows = batch_windows.ravel()
+        horizon_windows = horizon_windows.ravel()
         timestamps = timestamps.ravel()
         batch_nums = batch_nums.ravel()
 
@@ -468,6 +474,7 @@ class LSTMModel(DeepLearningModel):
 
         eval_dict = {
             "batch_number": batch_nums.astype(int),
+            "horizon": horizon_windows.astype(int),
             "timestamp": timestamps,
             "y_pred_real": y_pred_real,
             "y_true_real": y_true_real

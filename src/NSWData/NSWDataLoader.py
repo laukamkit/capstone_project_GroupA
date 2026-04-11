@@ -95,9 +95,14 @@ class NSWDataLoader:
         if flag == 'test' or flag == 'val':
             shuffle_flag = False
             step = getattr(config, 'eval_step_size', 1)
-            if config.eval_step_size > config.forecast_horizon:
-                print(f"Warning: eval_step_size {config.eval_step_size} is greater than forecast_horizon {config.forecast_horizon}. Setting eval_step_size to forecast_horizon.")
-            step = min(config.eval_step_size, len(data_set), config.forecast_horizon)
+
+            if getattr(config, 'forecast_last_step_only', False):
+                print("Config forecast_last_step_only is True: setting eval_step_size to 1 for evaluation loops to ensure we are evaluating on every single time step within the forecast horizon.")
+                step = 1
+            else:
+                if config.eval_step_size > config.forecast_horizon:
+                    print(f"Warning: eval_step_size {config.eval_step_size} is greater than forecast_horizon {config.forecast_horizon}. Setting eval_step_size to forecast_horizon.")
+                step = min(config.eval_step_size, len(data_set), config.forecast_horizon)
             indices = list(range(0, len(data_set), step))
             drop_last = False
         else:
