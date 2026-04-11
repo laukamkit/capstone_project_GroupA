@@ -45,6 +45,9 @@ class GradientBoostingConfig(Config):
     def config_params_to_results(self) -> dict:
         return {
             "model_type": "GradientBoosting",
+            "target_col": self.target_col,
+            "used_log_target": self.used_log_target,
+            "all_feature_cols": self.all_feature_cols,
             "n_estimators": self.n_estimators,
             "learning_rate": self.learning_rate,
             "max_depth": self.max_depth,
@@ -71,6 +74,15 @@ class SARIMAXConfig(Config):
     def config_params_to_results(self) -> dict:
         return {
             "model_type": "SARIMAX",
+            "target_col": self.target_col,
+            "used_log_target": self.used_log_target,
+            "all_feature_cols": self.all_feature_cols,
+            "horizon": self.forecast_horizon,
+            "training_size": self.lookback_window,
+            "target_lags": self.target_lags,
+            "target_mas": self.target_mas,
+            "feature_lags": self.feature_lag_cols,
+            "step_size": min(self.eval_step_size, self.forecast_horizon),
             "p": self.p,
             "d": self.d,
             "q": self.q,
@@ -80,11 +92,6 @@ class SARIMAXConfig(Config):
             "seasonality_period": self.seasonality_period,
             "enforce_stationarity": self.enforce_stationarity,
             "enforce_invertibility": self.enforce_invertibility,
-            "lookback": self.lookback_window,
-            "horizon": self.forecast_horizon,
-            "target_lags": self.target_lags,
-            "feature_lags": self.feature_lag_cols,
-            "step_size": min(self.eval_step_size, self.forecast_horizon),
         }
     
 @dataclass(kw_only=True)
@@ -134,6 +141,15 @@ class TransformersConfig(DeepLearningConfig):
     def config_params_to_results(self) -> dict:
         return {
             "model_type": self.model.value,
+            "target_col": self.target_col,
+            "used_log_target": self.used_log_target,
+            "all_feature_cols": self.all_feature_cols,
+            "horizon": self.forecast_horizon,
+            "lookback": self.lookback_window,
+            "target_lags": self.target_lags,
+            "target_mas": self.target_mas,
+            "feature_lags": self.feature_lag_cols,
+            "step_size": min(self.eval_step_size, self.forecast_horizon),
             "variate": self.variate,
             "patch_len": self.patch_len,
             "stride": self.stride,
@@ -142,11 +158,6 @@ class TransformersConfig(DeepLearningConfig):
             "dim_ff": self.dim_ff,
             "dropout": self.dropout,
             "dropout_head_fc": self.dropout_head_fc,
-            "lookback": self.lookback_window,
-            "horizon": self.forecast_horizon,
-            "demand_lags": self.target_lags,
-            "feature_lags": self.feature_lag_cols,
-            "step_size": min(self.eval_step_size, self.forecast_horizon),
         }
 
 
@@ -170,6 +181,16 @@ class LSTMConfig(DeepLearningConfig):
     def config_params_to_results(self) -> dict:
         return {
             "model_type": self.model_type.value,
+            "target_col": self.target_col,
+            "used_log_target": self.used_log_target,
+            "all_feature_cols": self.all_feature_cols,
+            "horizon": self.forecast_horizon,
+            "lookback": self.lookback_window,
+            "target_lags": self.target_lags,
+            "target_mas": self.target_mas,
+            "feature_lags": self.feature_lag_cols,
+            "step_size": min(self.eval_step_size, self.forecast_horizon),
+            "forecast_last_step_only": self.forecast_last_step_only,
             "hidden_size": self.hidden_size,
             "num_layers": self.num_layers,
             "dropout": self.dropout,
@@ -177,10 +198,5 @@ class LSTMConfig(DeepLearningConfig):
             "use_mlp_head": self.use_mlp_head,
             "mlp_hidden_size": self.mlp_hidden_size,
             "num_attention_heads": self.num_attention_heads,
-            "lookback": self.lookback_window,
-            "horizon": self.forecast_horizon,
-            "target_lags": self.target_lags,
-            "feature_lags": self.feature_lag_cols,
-            "step_size": min(self.eval_step_size, self.forecast_horizon),
         }
 
