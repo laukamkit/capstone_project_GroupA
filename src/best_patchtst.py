@@ -7,7 +7,7 @@ from ModelFiles.ModelPlots import *
 USE_LOG_TARGET = True
 CONTEXT_LENGTHS = [336, 512, 720] # two variants tested in PatchTST paper, 720 I added our own.
 EVAL_STEP_SIZE = 48
-NUM_EPOCHS = 1#00
+NUM_EPOCHS = 100
 PATIENCE = 10
 DEBUG = False
 
