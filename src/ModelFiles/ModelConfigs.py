@@ -139,7 +139,7 @@ class TransformersConfig(DeepLearningConfig):
         return n + 1  # +1 for target column included in MS/M input
     @property
     def c_out(self) -> int:
-        return 1
+        return 1 if self.variate in ['S', 'MS'] else len(self.all_feature_cols)
     @property
     def config_params_to_results(self) -> dict:
         return {
