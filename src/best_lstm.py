@@ -49,7 +49,7 @@ for forecast_last_step_only in FORECAST_LAST_STEP_ONLY:
             eval_step_size=EVAL_STEP_SIZE,
             debug= DEBUG,
         )
-        runs_df_h48_c168_artifact = run_experiment(config=biLSTM_h48_c168_config)
+        runs_df_h48_c168_artifact = run_experiment(config=biLSTM_h48_c168_config, experiment_name=biLSTM_h48_c168_config.task_id)
         print("=" * 200)
         print("\n")
 
@@ -83,7 +83,7 @@ for forecast_last_step_only in FORECAST_LAST_STEP_ONLY:
             forecast_last_step_only=forecast_last_step_only,
             debug= DEBUG,
         )
-        runs_df_h336_c336_artifacts = run_experiment(config=biLSTM_h336_c336_config)
+        runs_df_h336_c336_artifacts = run_experiment(config=biLSTM_h336_c336_config, experiment_name=biLSTM_h336_c336_config.task_id)
         print("=" * 200)
         print("\n")
 
@@ -117,6 +117,6 @@ for forecast_last_step_only in FORECAST_LAST_STEP_ONLY:
             forecast_last_step_only=forecast_last_step_only,
             debug= DEBUG,
         )
-        runs_df_h720_c720_artifacts = run_experiment(config=biLSTM_h720_c720_config)
+        runs_df_h720_c720_artifacts = run_experiment(config=biLSTM_h720_c720_config, experiment_name=biLSTM_h720_c720_config.task_id)
         print("=" * 200)
         print("\n")

@@ -49,7 +49,7 @@ def make_config_name(config: LSTMConfig):
 
     return name
 
-def run_experiment(config: LSTMConfig, experiment_name=None, save_best_model=True, show_live_plots=False):
+def run_experiment(config: LSTMConfig, experiment_name:str|None=None, save_best_model=True, show_live_plots=False):
     """
     Atomic run function.
     Assumes the following already exist earlier in the notebook:

@@ -22,7 +22,7 @@ for horizon in HORIZONS:
                 feature_cols=['demand_1_week_ago', 'demand_1_year_ago', 'TEMPERATURE','TEMP_SQUARED', 'IS_WEEKEND'],
                 scale=True,
                 # will perform grid search if any of the following parameters have more than 1 element
-                p=[3], 
+                p=[2,3,4], 
                 d=[0],
                 q=[0],
                 P=[1],
