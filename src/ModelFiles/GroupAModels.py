@@ -701,6 +701,7 @@ class TransformersModel(DeepLearningModel):
             print('loading model')
             self.model.load_state_dict(torch.load(os.path.join(checkpoint_path, f'{self.config.task_id}_checkpoint.pth')))
 
+
         criterion = self._select_criterion()
         preds = []
         trues = []
@@ -881,16 +882,6 @@ class SarimaxModel(BaseModel):
                                         print(e)
                                         print(f"\tError validating SARIMAX({p},{d},{q})({p_s},{d_s},{q_s},{self.seasonality_period}) on horizon {self.config.forecast_horizon} with step size {self.val_step_size}: {e}")
         print(f"Best SARIMAX{best_order}{best_seasonal_order} - AIC: {best_training_aic:.2f} | Validation MSE: {best_val_mse:.2f} | Validation RMSE: {np.sqrt(best_val_mse):.2f} | Time taken: {progress_log['time_taken_seconds'][-1]:.2f} seconds")
-        print("\nNow fitting the best model with both training and validation data with lookback_window applied...")
-        train_val_data = pd.concat([self.training_data, self.validation_data])[-self.config.lookback_window:] if self.config.lookback_window else pd.concat([self.training_data, self.validation_data])
-        best_model = SARIMAX(
-            endog=train_val_data[self.config.target_col],
-            exog=train_val_data[self.config.all_feature_cols] if self.config.all_feature_cols else None,
-            order=best_order,
-            seasonal_order=best_seasonal_order,
-            enforce_stationarity=self.enforce_stationarity,
-            enforce_invertibility=self.enforce_invertibility
-        ).fit(disp=False, warn_convergence=False)
         self.best_model = best_model
         self.best_order = best_order
         self.best_seasonal_order = best_seasonal_order
@@ -923,6 +914,11 @@ class SarimaxModel(BaseModel):
 
         if test_mode:
             test_df = self.test_data.copy()
+            print("\nNow updating the internal state of the best model with validation data WITHOUT updating parameters...")
+            rolling_state = rolling_state.append(
+                self.validation_data[self.config.target_col], 
+                exog=self.validation_data[self.config.all_feature_cols] if self.config.all_feature_cols else None, 
+                refit=False)
         else:
             test_df = self.validation_data.copy()
 

@@ -5,7 +5,7 @@ from ModelFiles.ModelConfigs import SARIMAXConfig, HORIZONS
 from ModelFiles.ModelPlots import *
 
 # This is the number of most recent time steps to use for training.
-CONTEXT_LENGTHS = [720, 1440]
+CONTEXT_LENGTHS = [1440]
 USE_LOG_TARGET = True
 DEBUG = False
 EVAL_STEP_SIZE = 48
@@ -22,7 +22,7 @@ for horizon in HORIZONS:
                 feature_cols=['demand_1_week_ago', 'demand_1_year_ago', 'TEMPERATURE','TEMP_SQUARED', 'IS_WEEKEND'],
                 scale=True,
                 # will perform grid search if any of the following parameters have more than 1 element
-                p=[2,3,4], 
+                p=[3], 
                 d=[0],
                 q=[0],
                 P=[1],
