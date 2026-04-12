@@ -28,7 +28,7 @@ class BaseDeepLearningNSWDataSet(Dataset):
     def __read_data__(self):
         """Shared border/slicing logic for all subclasses."""
         df_raw = pd.concat([self.train_df, self.val_df, self.test_df], axis=0).reset_index() # reset index to bring out date column for time encoding for TimeXer
-        self.df_raw = df_raw[[self.config.date_col] + [self.config.target_col] + self.config.all_feature_cols]
+        self.df_raw = df_raw[[self.config.date_col] + self.config.all_feature_cols + [self.config.target_col]]
         num_train = len(self.train_df)
         num_test = len(self.test_df)
         num_vali = len(self.val_df)
