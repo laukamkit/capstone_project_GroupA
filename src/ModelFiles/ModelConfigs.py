@@ -135,7 +135,8 @@ class TransformersConfig(DeepLearningConfig):
     individual: int = 0 # whether to use individual head for each channel input.
     @property
     def enc_in(self) -> int:
-        return len(self.feature_cols) if self.feature_cols is not None else 1
+        n = len(self.all_feature_cols) if self.all_feature_cols else 0
+        return n + 1  # +1 for target column included in MS/M input
     @property
     def c_out(self) -> int:
         return 1

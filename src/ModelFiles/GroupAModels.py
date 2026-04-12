@@ -101,8 +101,12 @@ class GradientBoostingModel(BaseModel):
             history = list(full_data.loc[:history_end, self.config.target_col].values)
             preds = []
             for ts in forecast_index:
-                row = pd.DataFrame([list(test_df.loc[ts,self.config.feature_cols])+[history[-i] for i in self.config.target_lags]+[np.mean(history[-i:]) for i in self.config.target_mas]], 
-                                   columns=self.config.all_feature_cols)
+                row = pd.DataFrame([
+                    list(test_df.loc[ts, self.config.feature_cols])
+                    + [history[-i] for i in self.config.target_lags]
+                    + [full_data.loc[ts - i * freq, feature] for feature, i in self.config.feature_lag_cols]
+                    + [np.mean(history[-i:]) for i in self.config.target_mas]
+                ], columns=self.config.all_feature_cols)
                 forecast = _model_fit.predict(row)[0]
                 history.append(forecast)
                 preds.append(forecast)
@@ -862,7 +866,7 @@ class SarimaxModel(BaseModel):
                                     start = time()
                                     model = SARIMAX(
                                         endog=self.training_data[self.config.target_col], 
-                                        exog=self.training_data[self.config.feature_cols] if self.config.feature_cols else None,
+                                        exog=self.training_data[self.config.all_feature_cols] if self.config.all_feature_cols else None,
                                         order=(p,d,q), 
                                         seasonal_order=(p_s,d_s,q_s,self.seasonality_period),
                                         enforce_stationarity=self.enforce_stationarity,
@@ -899,7 +903,7 @@ class SarimaxModel(BaseModel):
         train_val_data = pd.concat([self.training_data, self.validation_data])[-self.config.lookback_window:] if self.config.lookback_window else pd.concat([self.training_data, self.validation_data])
         best_model = SARIMAX(
             endog=train_val_data[self.config.target_col],
-            exog=train_val_data[self.config.feature_cols] if self.config.feature_cols else None,
+            exog=train_val_data[self.config.all_feature_cols] if self.config.all_feature_cols else None,
             order=best_order,
             seasonal_order=best_seasonal_order,
             enforce_stationarity=self.enforce_stationarity,

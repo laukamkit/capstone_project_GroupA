@@ -14,12 +14,12 @@ class BaseModel:
         training_data = self.train_scaled if self.config.scale else self.train
         validation_data = self.val_scaled if self.config.scale else self.validation
         test_data = self.test_scaled if self.config.scale else self.test
-        # note if func involves creating lag features, some rows will be dropped due to NaN values
         full_data = pd.concat([training_data, validation_data, test_data], axis=0)
         full_data = func(full_data, config.target_col, config.target_lags, config.target_mas, config.feature_lag_cols) if func else full_data
-        self.training_data = full_data.iloc[:len(training_data)].dropna()
-        self.validation_data = full_data.iloc[len(training_data):len(training_data)+len(validation_data)]
-        self.test_data = full_data.iloc[len(training_data)+len(validation_data):]
+        n_dropped = len(pd.concat([training_data, validation_data, test_data])) - len(full_data)
+        self.training_data = full_data.iloc[:len(training_data) - n_dropped]
+        self.validation_data = full_data.iloc[len(training_data) - n_dropped : len(training_data) - n_dropped + len(validation_data)]
+        self.test_data = full_data.iloc[len(training_data) - n_dropped + len(validation_data):]
         self.val_step_size = min(config.eval_step_size, config.forecast_horizon)
         if self.config.seed is not None:
             self.set_seed(self.config.seed)
