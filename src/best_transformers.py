@@ -53,8 +53,9 @@ for horizon in HORIZONS:
                 debug=DEBUG,
                 save_training_log=True,
             )
-        patch_tst_model = PatchTSTModel(patchtst_config)
-        patch_tst_model.train_model()
-        patch_tst_model.evaluate_model(test_mode=1)
-        print("=" * 200)
-        print("\n")
+            patch_tst_model = PatchTSTModel(patchtst_config)
+            patch_tst_model.train_model()
+            patch_tst_model.evaluate_model(test_mode=1)
+            print("=" * 200)
+            print("\n")
+            break

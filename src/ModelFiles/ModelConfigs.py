@@ -158,6 +158,7 @@ class TransformersConfig(DeepLearningConfig):
             "stride": self.stride,
             "d_model": self.d_model,
             "num_encoder_layers": self.num_encoder_layers,
+            "num_attention_heads": self.num_attention_heads,
             "dim_ff": self.dim_ff,
             "dropout": self.dropout,
             "dropout_head_fc": self.dropout_head_fc,
