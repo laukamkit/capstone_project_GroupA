@@ -41,7 +41,6 @@ for horizon in HORIZONS:
                     dropout_head_fc=0.2,
                     use_gpu=True,
                     time_encoding='timeF',
-                    shuffle_flag=True,
                     training_epochs=NUM_EPOCHS,
                     batch_size=32,
                     learning_rate=0.0001,

@@ -7,7 +7,7 @@ from ModelFiles.ModelPlots import *
 USE_LOG_TARGET = True
 CONTEXT_LENGTHS = [336, 512, 720] # two variants tested in PatchTST paper, 720 I added our own.
 EVAL_STEP_SIZE = 48
-NUM_EPOCHS = 100
+NUM_EPOCHS = 1#00
 PATIENCE = 10
 DEBUG = False
 
@@ -40,7 +40,6 @@ for horizon in HORIZONS:
                 dropout_head_fc=0.2,
                 use_gpu=True,
                 time_encoding='timeF',
-                shuffle_flag=True,
                 training_epochs=NUM_EPOCHS,
                 batch_size=32,
                 learning_rate=0.0001,

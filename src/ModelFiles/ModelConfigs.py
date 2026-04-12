@@ -4,7 +4,7 @@ from ModelFiles.ModelEnums import *
 __all__ = ["TransformersConfig", "SARIMAXConfig", "LSTMConfig", "HORIZONS", "SEEDS"]
 
 HORIZONS = [48, 336, 720]
-SEEDS = [31415]#, 27182, 14142, 17320, 22360, 57721, 66987, 11235, 98765, 43210]
+SEEDS = [31415, 27182, 14142, 17320, 22360, 57721]#, 66987, 11235, 98765, 43210]
 
 @dataclass
 class Config:
@@ -98,7 +98,6 @@ class SARIMAXConfig(Config):
     
 @dataclass(kw_only=True)
 class DeepLearningConfig(Config):
-    shuffle_flag: bool = True
     training_epochs: int = 10
     batch_size: int = 64
     learning_rate: float = 0.0001
