@@ -7,7 +7,7 @@ from ModelFiles.ModelPlots import *
 USE_LOG_TARGET = True
 CONTEXT_LENGTHS = [336, 720]
 EVAL_STEP_SIZE = 48
-NUM_EPOCHS = 1
+NUM_EPOCHS = 100
 PATIENCE = 10
 DEBUG = False
 
@@ -33,12 +33,12 @@ for horizon in HORIZONS:
                     variate='M',
                     patch_len=16,
                     stride=16,  # TimeXer uses patch_len as stride internally
-                    d_model=256,
-                    num_attention_heads=16,
-                    num_encoder_layers=4,
-                    dim_ff=256,
-                    dropout=0.2,
-                    dropout_head_fc=0.2,
+                    d_model=512,
+                    num_attention_heads=8,
+                    num_encoder_layers=3,
+                    dim_ff=2048,
+                    dropout=0.1,
+                    dropout_head_fc=0.1,
                     use_gpu=True,
                     time_encoding='timeF',
                     training_epochs=NUM_EPOCHS,
