@@ -510,8 +510,8 @@ class LSTMModel(DeepLearningModel):
         return eval_dict
     
 
-class PatchTSTModel(DeepLearningModel):
-    # This class is a wrapper around the official PatchTST implementation by the official authors but their data
+class TransformersModel(DeepLearningModel):
+    """Unified wrapper for PatchTST, iTransformer, TimeXer and other transformer-based models."""
     def __init__(self, config: TransformersConfig, func: Callable[[pd.DataFrame, str, list[int], list[int], list[tuple[str, int]]], pd.DataFrame] | None = None):
         self.variate = config.variate
         self.patch_len = config.patch_len
@@ -545,29 +545,20 @@ class PatchTSTModel(DeepLearningModel):
     def _select_criterion(self):
         criterion = nn.MSELoss()
         return criterion
-    
-    def _compute_inverse_scaling(self, shape, pred, true):
-        feature_names = self.nsw_data_loader.scaler.feature_names_in_.tolist()
-        n_features = shape[-1]
-        total = shape[0] * shape[1]
 
-        pred_arr = pred if isinstance(pred, np.ndarray) else np.array(pred)
-        true_arr = true if isinstance(true, np.ndarray) else np.array(true)
-
-        if n_features == 1:
-            # Univariate / MS: only the target column
-            pos = feature_names.index(self.config.target_col)
-            means = self.nsw_data_loader.scaler.mean_[pos]   # scalar
-            stds  = self.nsw_data_loader.scaler.var_[pos] ** 0.5
+    def _forward_model(self, batch_x, batch_x_mark):
+        """Dispatch forward call based on model type."""
+        model_name = self.config.model.value.lower()
+        if 'timexer' in model_name:
+            outputs = self.model(batch_x, batch_x_mark, None, None)
+        elif 'linear' in model_name or 'tst' in model_name:
+            outputs = self.model(batch_x)
         else:
-            # Multivariate M: one mean/std per output channel, in feature_cols order
-            positions = [feature_names.index(col) for col in [self.config.target_col]+self.config.all_feature_cols]
-            means = self.nsw_data_loader.scaler.mean_[positions]   # shape: (n_features,)
-            stds  = self.nsw_data_loader.scaler.var_[positions] ** 0.5
-
-        pred_inverse = (pred_arr.reshape(total, n_features) * stds + means).reshape(shape)
-        true_inverse = (true_arr.reshape(total, n_features) * stds + means).reshape(shape)
-        return pred_inverse, true_inverse
+            if self.config.output_attention:
+                outputs = self.model(batch_x, batch_x_mark)[0]
+            else:
+                outputs = self.model(batch_x, batch_x_mark)
+        return outputs
     
     def train_model(self):
         dataset, data_loader = self._get_data(flag='train')
@@ -589,12 +580,16 @@ class PatchTSTModel(DeepLearningModel):
 
         best_val_rmse_train = float("inf")
         best_epoch_train = -1
-            
-        scheduler = lr_scheduler.OneCycleLR(optimizer = model_optim,
-                                            steps_per_epoch = train_steps,
-                                            pct_start = self.config.pct_start,
-                                            epochs = self.config.training_epochs,
-                                            max_lr = self.config.learning_rate)
+
+        # OneCycleLR scheduler only used for 'TST' learning rate adjustment
+        scheduler = None
+        if self.config.lradj == 'TST':
+            scheduler = lr_scheduler.OneCycleLR(optimizer = model_optim,
+                                                steps_per_epoch = train_steps,
+                                                pct_start = self.config.pct_start,
+                                                epochs = self.config.training_epochs,
+                                                max_lr = self.config.learning_rate)
+
         progress_log = {
             'model_name': [],
             'lookback_window': [],
@@ -629,14 +624,8 @@ class PatchTSTModel(DeepLearningModel):
                 batch_x_mark = batch_x_mark.float().to(self.device)
                 batch_y_mark = batch_y_mark.float().to(self.device)
 
-                if 'linear' in self.config.model.value.lower() or 'tst' in self.config.model.value.lower():
-                        outputs = self.model(batch_x)
-                else:
-                    if self.config.output_attention:
-                        outputs = self.model(batch_x, batch_x_mark)[0]
-                    else:
-                        outputs = self.model(batch_x, batch_x_mark)
-                # print(outputs.shape,batch_y.shape)
+                outputs = self._forward_model(batch_x, batch_x_mark)
+
                 f_dim = -1 if self.config.variate == 'MS' else 0
                 outputs = outputs[:, -self.config.forecast_horizon:, f_dim:]
                 batch_y = batch_y[:, -self.config.forecast_horizon:, f_dim:].to(self.device)
@@ -655,7 +644,7 @@ class PatchTSTModel(DeepLearningModel):
                 loss.backward()
                 model_optim.step()
                     
-                if self.config.lradj == 'TST':
+                if self.config.lradj == 'TST' and scheduler is not None:
                     adjust_learning_rate(model_optim, scheduler, epoch + 1, self.config, printout=False)
                     scheduler.step()
             cost_time = time() - epoch_time
@@ -694,21 +683,21 @@ class PatchTSTModel(DeepLearningModel):
         self.model.load_state_dict(torch.load(best_model_path))
         fitting_progress_log_df = pd.DataFrame(progress_log)
         if self.config.save_training_log:
-            _ptst_fit_log_path = os.path.join(results_path, f"{self.config.task_id}_fitting_log.csv")
-            _ptst_fit_log_exists = os.path.isfile(_ptst_fit_log_path)
-            fitting_progress_log_df.to_csv(_ptst_fit_log_path, mode='a' if _ptst_fit_log_exists else 'w', header=not _ptst_fit_log_exists, index=False)
+            _fit_log_path = os.path.join(results_path, f"{self.config.task_id}_fitting_log.csv")
+            _fit_log_exists = os.path.isfile(_fit_log_path)
+            fitting_progress_log_df.to_csv(_fit_log_path, mode='a' if _fit_log_exists else 'w', header=not _fit_log_exists, index=False)
         return self.model
     
     def evaluate_model(self, test_mode=0):
         dataset, data_loader = self._get_data(flag='test' if test_mode else 'val')
+        results_path = os.path.join(NSWDataLoader.output_dir, f"{self.config.model.value}_results")
+        if not os.path.exists(results_path):
+            os.makedirs(results_path)
+        checkpoint_path = os.path.join(NSWDataLoader.output_dir, f"{self.config.model.value}_checkpoints")
+        if not os.path.exists(checkpoint_path):
+            os.makedirs(checkpoint_path)
 
         if test_mode:
-            results_path = os.path.join(NSWDataLoader.output_dir, f"{self.config.model.value}_results")
-            if not os.path.exists(results_path):
-                os.makedirs(results_path)
-            checkpoint_path = os.path.join(NSWDataLoader.output_dir, f"{self.config.model.value}_checkpoints")
-            if not os.path.exists(checkpoint_path):
-                os.makedirs(checkpoint_path)
             print('loading model')
             self.model.load_state_dict(torch.load(os.path.join(checkpoint_path, f'{self.config.task_id}_checkpoint.pth')))
 
@@ -734,14 +723,7 @@ class PatchTSTModel(DeepLearningModel):
                 batch_x_mark = batch_x_mark.float().to(self.device)
                 batch_window = (np.zeros((y_batch_time.shape[0],y_batch_time.shape[1])) + np.arange(y_batch_time.shape[1]))
 
-                if 'linear' in self.config.model.value.lower() or 'tst' in self.config.model.value.lower():
-                        outputs = self.model(batch_x)
-                else:
-                    if self.config.output_attention:
-                        outputs = self.model(batch_x, batch_x_mark)[0]
-
-                    else:
-                        outputs = self.model(batch_x, batch_x_mark)
+                outputs = self._forward_model(batch_x, batch_x_mark)
                 
                 f_dim = -1 if self.config.variate == 'MS' else 0
                 outputs = outputs[:, -self.config.forecast_horizon:, f_dim:]
@@ -764,8 +746,8 @@ class PatchTSTModel(DeepLearningModel):
                     pred = outputs.numpy()
                     true = batch_y.numpy()
                 if self.config.used_log_target:
-                    pred = np.exp(pred)
-                    true = np.exp(true)
+                    pred = np.concatenate([pred[:,:,:-1], np.exp(pred[:,:,-1:])], axis=2)
+                    true = np.concatenate([true[:,:,:-1], np.exp(true[:,:,-1:])], axis=2)
                 preds.extend(pred)
                 trues.extend(true)
                 timestamps.extend(ts)
@@ -783,15 +765,15 @@ class PatchTSTModel(DeepLearningModel):
         timestamps = timestamps.reshape(-1, timestamps.shape[-1])
         batch_nums = batch_nums.reshape(-1, batch_nums.shape[-1])
         batch_windows = batch_windows.reshape(-1, batch_windows.shape[-1])
-        mae, mse, rmse, mape, mspe, rse, corr = metric(preds, trues)
+        mae, mse, rmse, mape, mspe, rse, corr = metric(preds[:, :, -1], trues[:, :, -1]) # only get metrics for target variable.
         
         # result save
         results_df = pd.DataFrame({
             'index': batch_nums.flatten().astype(int),
             'horizon': batch_windows.flatten().astype(int),
             'timestamp': timestamps.flatten(),
-            'y_actual': trues.flatten(),
-            'y_pred': preds.flatten()
+            'y_actual': trues[:, :, -1].flatten(),
+            'y_pred': preds[:, :, -1].flatten()
         })
         metrics_df = pd.DataFrame({
             'mae': [mae],
@@ -805,17 +787,17 @@ class PatchTSTModel(DeepLearningModel):
         if test_mode:
             print(f"Test Results - MAE: {mae:.2f} MW | RMSE: {rmse:.2f} MW | MSE: {mse:.2f} MW^2")
             if self.config.save_test_results:
-                _ptst_res_path = os.path.join(results_path, f"{self.config.task_id}_test_results.csv")
-                _ptst_res_exists = os.path.isfile(_ptst_res_path)
-                results_df.to_csv(_ptst_res_path, mode='a' if _ptst_res_exists else 'w', header=not _ptst_res_exists, index=False)
-            _ptst_met_path = os.path.join(results_path, f"{self.config.task_id}_test_metrics.csv")
-            _ptst_met_exists = os.path.isfile(_ptst_met_path)
-            metrics_df.to_csv(_ptst_met_path, mode='a' if _ptst_met_exists else 'w', header=not _ptst_met_exists, index=False)
+                _res_path = os.path.join(results_path, f"{self.config.task_id}_test_results.csv")
+                _res_exists = os.path.isfile(_res_path)
+                results_df.to_csv(_res_path, mode='a' if _res_exists else 'w', header=not _res_exists, index=False)
+            _met_path = os.path.join(results_path, f"{self.config.task_id}_test_metrics.csv")
+            _met_exists = os.path.isfile(_met_path)
+            metrics_df.to_csv(_met_path, mode='a' if _met_exists else 'w', header=not _met_exists, index=False)
             print(f"Saved detailed rolling forecast results to {results_path}/{self.config.task_id}_test_results.csv")
         else:
             self.model.train()
-        return batch_nums.flatten().astype(int), timestamps.flatten(), trues.flatten(), preds.flatten(), batch_windows.flatten(), mae, rmse, mse, total_loss
-    
+        return batch_nums.flatten().astype(int), timestamps.flatten(), trues[:, :, -1].flatten(), preds[:, :, -1].flatten(), batch_windows.flatten(), mae, rmse, mse, total_loss
+
 
 class SarimaxModel(BaseModel):
     def __init__(self, config: SARIMAXConfig, func: Callable[[pd.DataFrame, str, list[int], list[int], list[tuple[str, int]]], pd.DataFrame] | None = None):

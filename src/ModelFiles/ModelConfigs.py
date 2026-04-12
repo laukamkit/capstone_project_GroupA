@@ -133,6 +133,45 @@ class TransformersConfig(DeepLearningConfig):
     kernel_size: int = 25
     dropout_ff: float = 0.1 # dropout for a fully connected layer head only if pretrain_head is True, but pretrain_head is never used in official repo.
     individual: int = 0 # whether to use individual head for each channel input.
+    use_norm: bool = True # TimeXer: whether to apply instance normalization on encoder input
+    activation: str = 'gelu' # TimeXer: activation function in encoder feed-forward layers ('relu' or 'gelu')
+
+    # --- Alias properties for TimeXer.Model compatibility ---
+    # TimeXer.Model.__init__ reads config attributes using original paper naming.
+    # These read-only properties map our naming convention to the names expected by TimeXer.
+    @property
+    def task_name(self) -> str:
+        return 'long_term_forecast'
+    @property
+    def features(self) -> str:
+        return self.variate
+    @property
+    def seq_len(self) -> int | None:
+        return self.lookback_window
+    @property
+    def pred_len(self) -> int:
+        return self.forecast_horizon
+    @property
+    def embed(self) -> str:
+        return self.time_encoding
+    @property
+    def n_heads(self) -> int:
+        return self.num_attention_heads
+    @property
+    def d_ff(self) -> int:
+        return self.dim_ff
+    @property
+    def e_layers(self) -> int:
+        return self.num_encoder_layers
+    @property
+    def factor(self) -> int:
+        """Hardcoded; FullAttention accepts but ignores this parameter."""
+        return 1
+    @property
+    def freq(self) -> str:
+        """Hardcoded; DataEmbedding_inverted accepts but ignores this parameter."""
+        return '30min'
+
     @property
     def enc_in(self) -> int:
         n = len(self.all_feature_cols) if self.all_feature_cols else 0
@@ -163,6 +202,8 @@ class TransformersConfig(DeepLearningConfig):
             "dim_ff": self.dim_ff,
             "dropout": self.dropout,
             "dropout_head_fc": self.dropout_head_fc,
+            "use_norm": self.use_norm,
+            "activation": self.activation,
         }
 
 

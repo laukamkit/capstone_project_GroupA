@@ -125,3 +125,26 @@ class DeepLearningModel(BaseModel):
         if user_input.lower() == 'q':
             return False
         return True
+
+    def _compute_inverse_scaling(self, shape, pred, true):
+        feature_names = self.nsw_data_loader.scaler.feature_names_in_.tolist()
+        n_features = shape[-1]
+        total = shape[0] * shape[1]
+
+        pred_arr = pred if isinstance(pred, np.ndarray) else np.array(pred)
+        true_arr = true if isinstance(true, np.ndarray) else np.array(true)
+
+        if n_features == 1:
+            # Univariate / MS: only the target column
+            pos = feature_names.index(self.config.target_col)
+            means = self.nsw_data_loader.scaler.mean_[pos]   # scalar
+            stds  = self.nsw_data_loader.scaler.var_[pos] ** 0.5
+        else:
+            # Multivariate M: one mean/std per output channel, in feature_cols order
+            positions = [feature_names.index(col) for col in self.config.all_feature_cols+[self.config.target_col]]
+            means = self.nsw_data_loader.scaler.mean_[positions]   # shape: (n_features,)
+            stds  = self.nsw_data_loader.scaler.var_[positions] ** 0.5
+
+        pred_inverse = (pred_arr.reshape(total, n_features) * stds + means).reshape(shape)
+        true_inverse = (true_arr.reshape(total, n_features) * stds + means).reshape(shape)
+        return pred_inverse, true_inverse
