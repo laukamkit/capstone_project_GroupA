@@ -43,7 +43,8 @@ class GradientBoostingModel(BaseModel):
             "task_id": [self.config.task_id],
             "model_type": ["GradientBoosting"],
             "rmse": [rmse],
-            "mae": [mae]
+            "mae": [mae],
+            **{k: [v] for k, v in self.config.config_params_to_results.items()}
         })
         os.makedirs(os.path.join(self.nsw_data_loader.output_dir, "gradient_boosting_models"), exist_ok=True)
         with open(os.path.join(self.nsw_data_loader.output_dir, "gradient_boosting_models", f"{self.config.task_id}_model.pkl"), "wb") as f:
@@ -362,6 +363,7 @@ class LSTMModel(DeepLearningModel):
                 "val_loss": val_losses,
                 "best_epoch": [self.best_epoch] * self.total_epochs_run,
                 "early_stop_epoch": [self.early_stop_epoch] * self.total_epochs_run,
+                **{k: [v] * self.total_epochs_run for k, v in self.config.config_params_to_results.items()}
             }
             progress_log_df = pd.DataFrame(progress_log)
             _lstm_fit_log_path = os.path.join(results_path, f"{self.config.task_id}_fitting_log.csv")
@@ -681,6 +683,7 @@ class TransformersModel(DeepLearningModel):
         self.best_epoch = best_epoch_train
         self.early_stop_epoch = epoch + 1 if early_stopping.early_stop else None
         self.model.load_state_dict(torch.load(best_model_path))
+        progress_log.update({k: [v] * len(progress_log['epoch']) for k, v in self.config.config_params_to_results.items()})
         fitting_progress_log_df = pd.DataFrame(progress_log)
         if self.config.save_training_log:
             _fit_log_path = os.path.join(results_path, f"{self.config.task_id}_fitting_log.csv")
@@ -886,6 +889,7 @@ class SarimaxModel(BaseModel):
         self.best_order = best_order
         self.best_seasonal_order = best_seasonal_order
         if self.config.save_training_log:
+            progress_log.update({k: [v] * len(progress_log['model_name']) for k, v in self.config.config_params_to_results.items()})
             fitting_progress_log_df = pd.DataFrame(progress_log)
             os.makedirs(os.path.join(NSWDataLoader.output_dir, "sarimax_results"), exist_ok=True)
             _sarimax_fit_log_path = os.path.join(NSWDataLoader.output_dir, "sarimax_results", f"{self.config.task_id}_fitting_log.csv")
