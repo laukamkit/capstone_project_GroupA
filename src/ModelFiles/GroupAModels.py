@@ -46,7 +46,8 @@ class GradientBoostingModel(BaseModel):
             "mae": [mae],
             **{k: [v] for k, v in self.config.config_params_to_results.items()}
         })
-        self.pickle_save_checkpoints(self.model, "gradient_boosting_models", f"{self.config.task_id}_model.pkl")
+        if self.config.save_model:
+            self.pickle_save_checkpoints(self.model, "gradient_boosting_models", f"{self.config.task_id}_model.pkl")
         if self.config.save_training_log:
             self.save_df(progress_log_df, "gradient_boosting_results", f"{self.config.task_id}_fitting_log")
         return self.model
@@ -655,11 +656,9 @@ class TransformersModel(DeepLearningModel):
             else:
                 print('Updating learning rate to {}'.format(scheduler.get_last_lr()[0]))
 
-        best_model_path = os.path.join(checkpoint_path, f'{self.config.task_id}_checkpoint.pth')
         self.total_epochs_run = epoch + 1
         self.best_epoch = best_epoch_train
         self.early_stop_epoch = epoch + 1 if early_stopping.early_stop else None
-        self.model.load_state_dict(torch.load(best_model_path))
         progress_log.update({k: [v] * len(progress_log['epoch']) for k, v in self.config.config_params_to_results.items()})
         fitting_progress_log_df = pd.DataFrame(progress_log)
         if self.config.save_training_log:
@@ -670,13 +669,22 @@ class TransformersModel(DeepLearningModel):
         self.torch_load_checkpoints(f"{self.config.model.value}_checkpoints", file_name)
         return self.model
 
-    def evaluate_model(self, test_mode=0):
+    def evaluate_model(self, model=None, test_mode=0):
+        if model is None:
+            if self.model is None:
+                raise ValueError("No model provided for testing. Please provide a torch.nn.Module object or a model file name, or ensure that train_model() has been called to train and set self.model.")
+            else:
+                print('loading model from training')
+        elif isinstance(model, str):
+            self.load_model(model)
+            if self.model is None:
+                raise ValueError("Model not found in patchtst_models directory. Please check the file name and try again or use train_model() to train a new model.")
+        elif isinstance(model, torch.nn.Module):
+            self.model = model.to(self.device)
+        else:
+            raise ValueError("model must be either None, a file name string, or a torch.nn.Module object.")
+        
         dataset, data_loader = self._get_data(flag='test' if test_mode else 'val')
-
-        if test_mode:
-            print('loading model')
-            self.load_model(f'{self.config.task_id}_checkpoint.pth')
-
 
         criterion = self._select_criterion()
         preds = []
