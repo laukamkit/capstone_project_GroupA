@@ -53,11 +53,11 @@ class BaseModel:
     
     def _generate_output_path(self, folder_name):
         if self.specific_output_dir:
-            model_dir = os.path.join(self.specific_output_dir, folder_name)
+            output_directory = os.path.join(self.specific_output_dir, folder_name)
         else:
-            model_dir = os.path.join(NSWDataLoader.output_dir, folder_name)
-        os.makedirs(model_dir, exist_ok=True)
-        return model_dir
+            output_directory = os.path.join(NSWDataLoader.output_dir, folder_name)
+        os.makedirs(output_directory, exist_ok=True)
+        return output_directory
     
     def torch_save_checkpoints(self, model, folder_name, checkpoint_file_name):
         model_dir = self._generate_output_path(folder_name)
@@ -125,8 +125,8 @@ class BaseModel:
         return True
 
 class DeepLearningModel(BaseModel):
-    def __init__(self, config: DeepLearningConfig, func: Callable[[pd.DataFrame, str, list[int], list[int], list[tuple[str, int]]], pd.DataFrame] | None = None):
-        super().__init__(config, func)
+    def __init__(self, config: DeepLearningConfig, func: Callable[[pd.DataFrame, str, list[int], list[int], list[tuple[str, int]]], pd.DataFrame] | None = None, specific_output_dir: str | None = None):
+        super().__init__(config, func, specific_output_dir)
         self.config: DeepLearningConfig = config
         self.device = self._acquire_device()
         self.training_data = self.training_data.dropna().reset_index()
