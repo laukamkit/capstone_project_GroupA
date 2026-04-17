@@ -49,7 +49,7 @@ def make_config_name(config: LSTMConfig):
 
     return name
 
-def run_experiment(config: LSTMConfig, experiment_name:str|None=None, save_best_model=True, show_live_plots=False):
+def run_experiment(config: LSTMConfig, experiment_name:str|None=None, specific_output_dir:str|None=None):
     """
     Atomic run function.
     Assumes the following already exist earlier in the notebook:
@@ -66,7 +66,7 @@ def run_experiment(config: LSTMConfig, experiment_name:str|None=None, save_best_
     - plot_predictions
     - nn (torch.nn)
     """
-    lstm_model = LSTMModel(config, add_lag_features)
+    lstm_model = LSTMModel(config, add_lag_features, specific_output_dir=specific_output_dir)
     experiment_name = experiment_name or make_config_name(config)
 
     print("\n" + "=" * 90)
@@ -166,15 +166,6 @@ def run_experiment(config: LSTMConfig, experiment_name:str|None=None, save_best_
     ]:
         if hasattr(config, k):
             result[k] = getattr(config, k)
-
-    # Optional checkpoint save
-    if save_best_model:
-        checkpoint_path = os.path.join(lstm_model.nsw_data_loader.output_dir, "LSTM_checkpoints")
-        if not os.path.exists(checkpoint_path):
-            os.makedirs(checkpoint_path)
-        model_path = os.path.join(checkpoint_path, f"{experiment_name}_best.pt")
-        torch.save(best_state, model_path)       
-        print(f"Saved best model state to: {model_path}")
 
     artifact = {
         "config": deepcopy(config),

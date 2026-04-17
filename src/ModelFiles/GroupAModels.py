@@ -358,8 +358,8 @@ class LSTMModel(DeepLearningModel):
             }
             progress_log_df = pd.DataFrame(progress_log)
             self.save_df(progress_log_df, "LSTM_results", f"{self.config.task_id}_fitting_log")
-
-        self.torch_save_checkpoints(best_state, "lstm_models", f"{self.config.task_id}_best_model.pth")
+        if self.config.save_model:
+            self.torch_save_checkpoints(best_state, "lstm_models", f"{self.config.task_id}_best_model.pth")
 
         return {
             "model": self.model,
