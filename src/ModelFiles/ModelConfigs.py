@@ -23,6 +23,7 @@ class Config:
     eval_step_size: int = 1
     save_training_log: bool = False
     save_test_results: bool = False
+    save_model: bool = True
     debug: bool = False
     @property
     def all_feature_cols(self) -> list[str]:

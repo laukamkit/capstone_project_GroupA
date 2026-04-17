@@ -508,7 +508,7 @@ class TransformersModel(DeepLearningModel):
         self.dim_ff = config.dim_ff
         self.dropout_ff = config.dropout_ff
         self.dropout_head_fc = config.dropout_head_fc
-        super().__init__(config, func)
+        super().__init__(config, func, specific_output_dir)
         self.config: TransformersConfig = config
         self.model = self._build_model().to(self.device)
         self.total_epochs_run: int | None = None
@@ -552,7 +552,7 @@ class TransformersModel(DeepLearningModel):
         time_now = time()
 
         train_steps = len(data_loader)
-        early_stopping = EarlyStopping(patience=self.config.patience, verbose=True)
+        early_stopping = EarlyStopping(patience=self.config.patience, verbose=True, save_model=self.config.save_model)
 
         model_optim = self._select_optimizer()
         criterion = self._select_criterion()
@@ -580,9 +580,7 @@ class TransformersModel(DeepLearningModel):
             'validation_mse': [],
             'time_taken_seconds': []
         }
-        checkpoint_path = os.path.join(NSWDataLoader.output_dir, f"{self.config.model.value}_checkpoints")
-        if not os.path.exists(checkpoint_path):
-            os.makedirs(checkpoint_path)
+        checkpoint_path = self._generate_output_path(f"{self.config.model.value}_checkpoints")
         for epoch in range(self.config.training_epochs):
             iter_count = 0
             train_loss = []
@@ -657,7 +655,7 @@ class TransformersModel(DeepLearningModel):
             else:
                 print('Updating learning rate to {}'.format(scheduler.get_last_lr()[0]))
 
-        best_model_path = checkpoint_path + '/' + f'{self.config.task_id}_checkpoint.pth'
+        best_model_path = os.path.join(checkpoint_path, f'{self.config.task_id}_checkpoint.pth')
         self.total_epochs_run = epoch + 1
         self.best_epoch = best_epoch_train
         self.early_stop_epoch = epoch + 1 if early_stopping.early_stop else None
@@ -674,9 +672,6 @@ class TransformersModel(DeepLearningModel):
 
     def evaluate_model(self, test_mode=0):
         dataset, data_loader = self._get_data(flag='test' if test_mode else 'val')
-        checkpoint_path = os.path.join(NSWDataLoader.output_dir, f"{self.config.model.value}_checkpoints")
-        if not os.path.exists(checkpoint_path):
-            os.makedirs(checkpoint_path)
 
         if test_mode:
             print('loading model')
@@ -868,7 +863,8 @@ class SarimaxModel(BaseModel):
             progress_log.update({k: [v] * len(progress_log['model_name']) for k, v in self.config.config_params_to_results.items()})
             fitting_progress_log_df = pd.DataFrame(progress_log)
             self.save_df(fitting_progress_log_df, self.results_folder_name, f"{self.config.task_id}_fitting_log")
-        self.pickle_save_checkpoints(self.best_model, self.models_folder_name, f"{self.config.task_id}_model.pkl")
+        if self.config.save_model:
+            self.pickle_save_checkpoints(self.best_model, self.models_folder_name, f"{self.config.task_id}_model.pkl")
         print("Training complete. Saved best model and fitting progress log.")
 
     def load_model(self, file_name: str):

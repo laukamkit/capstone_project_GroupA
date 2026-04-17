@@ -38,7 +38,7 @@ def adjust_learning_rate(optimizer, scheduler, epoch, args, printout=True):
 
 
 class EarlyStopping:
-    def __init__(self, patience=7, verbose=False, delta=0):
+    def __init__(self, patience=7, verbose=False, delta=0, save_model=True):
         self.patience = patience
         self.verbose = verbose
         self.counter = 0
@@ -46,12 +46,14 @@ class EarlyStopping:
         self.early_stop = False
         self.val_loss_min = np.inf
         self.delta = delta
+        self.save_model = save_model
 
     def __call__(self, val_loss, model, path, model_name):
         score = -val_loss
         if self.best_score is None:
             self.best_score = score
-            self.save_checkpoint(val_loss, model, path, model_name)
+            if self.save_model:
+                self.save_checkpoint(val_loss, model, path, model_name)
         elif score < self.best_score + self.delta:
             self.counter += 1
             print(f'EarlyStopping counter: {self.counter} out of {self.patience}')
@@ -59,7 +61,8 @@ class EarlyStopping:
                 self.early_stop = True
         else:
             self.best_score = score
-            self.save_checkpoint(val_loss, model, path, model_name)
+            if self.save_model:
+                self.save_checkpoint(val_loss, model, path, model_name)
             self.counter = 0
 
     def save_checkpoint(self, val_loss, model, path, model_name):
