@@ -57,6 +57,7 @@ class GradientBoostingConfig(Config):
             "target_mas": self.target_mas,
             "feature_lags": self.feature_lag_cols,
             "step_size": min(self.eval_step_size, self.forecast_horizon),
+            "seed": self.seed,
         }
 
 @dataclass(kw_only=True)
@@ -203,6 +204,8 @@ class TransformersConfig(DeepLearningConfig):
             "dropout_head_fc": self.dropout_head_fc,
             "use_norm": self.use_norm,
             "activation": self.activation,
+            "learning_rate": self.learning_rate,
+            "seed": self.seed,
         }
 
 
@@ -244,5 +247,7 @@ class LSTMConfig(DeepLearningConfig):
             "use_mlp_head": self.use_mlp_head,
             "mlp_hidden_size": self.mlp_hidden_size,
             "num_attention_heads": self.num_attention_heads,
+            "learning_rate": self.learning_rate,
+            "seed": self.seed,
         }
 

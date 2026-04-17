@@ -12,7 +12,7 @@ from ModelFiles.ModelConfigs import LSTMConfig, TransformersConfig
 class NSWDataLoader:
     output_dir = ''
     
-    def __init__(self, train_size: float = 0.6, val_size: float = 0.2):
+    def __init__(self, train_size: float = 0.7, val_size: float = 0.1):
         self._set_repo_path()
         self.train_size = train_size
         self.val_size = val_size

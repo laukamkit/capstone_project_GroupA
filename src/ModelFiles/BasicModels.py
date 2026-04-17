@@ -1,3 +1,6 @@
+import pickle
+import os
+
 import torch
 import random
 import numpy as np
@@ -7,8 +10,9 @@ from typing import Callable
 import pandas as pd
 
 class BaseModel:
-    def __init__(self, config: Config, func: Callable[[pd.DataFrame, str, list[int], list[int],list[tuple[str,int]]], pd.DataFrame] | None = None):
+    def __init__(self, config: Config, func: Callable[[pd.DataFrame, str, list[int], list[int],list[tuple[str,int]]], pd.DataFrame] | None = None, specific_output_dir: str | None = None):
         self.config: Config = config
+        self.specific_output_dir = specific_output_dir
         self.nsw_data_loader = NSWDataLoader()
         self.train, self.validation, self.test, self.train_scaled, self.val_scaled, self.test_scaled, self.scaler = self.nsw_data_loader.load_data()
         training_data = self.train_scaled if self.config.scale else self.train
@@ -47,6 +51,50 @@ class BaseModel:
     def evaluate_model(self):
         raise NotImplementedError
     
+    def _generate_output_path(self, folder_name):
+        if self.specific_output_dir:
+            model_dir = os.path.join(self.specific_output_dir, folder_name)
+        else:
+            model_dir = os.path.join(NSWDataLoader.output_dir, folder_name)
+        os.makedirs(model_dir, exist_ok=True)
+        return model_dir
+    
+    def torch_save_checkpoints(self, model, folder_name, checkpoint_file_name):
+        model_dir = self._generate_output_path(folder_name)
+        model_path = os.path.join(model_dir, checkpoint_file_name)
+        state_dict = model.state_dict() if hasattr(model, 'state_dict') else model
+        torch.save(state_dict, model_path)
+        print(f"Saved {checkpoint_file_name} to {model_path}")
+
+    def torch_load_checkpoints(self, folder_name, checkpoint_file_name):
+        model_dir = self._generate_output_path(folder_name)
+        model_path = os.path.join(model_dir, checkpoint_file_name)
+        self.model.load_state_dict(torch.load(model_path))
+        print(f"Loaded {checkpoint_file_name} from {model_path}")
+        return self.model
+
+    def pickle_save_checkpoints(self, model, folder_name, checkpoint_file_name):
+        model_dir = self._generate_output_path(folder_name)
+        model_path = os.path.join(model_dir, checkpoint_file_name)
+        with open(model_path, 'wb') as f:
+            pickle.dump(model, f)
+        print(f"Saved {checkpoint_file_name} to {model_path}")
+
+    def pickle_load_checkpoints(self, folder_name, checkpoint_file_name):
+        model_dir = self._generate_output_path(folder_name)
+        model_path = os.path.join(model_dir, checkpoint_file_name)
+        with open(model_path, 'rb') as f:
+            model = pickle.load(f)
+        print(f"Loaded {checkpoint_file_name} from {model_path}")
+        return model
+
+    def save_df(self, df: pd.DataFrame, folder_name: str, file_name: str):
+        results_path = self._generate_output_path(folder_name)
+        file_path = os.path.join(results_path, f"{file_name}.csv")
+        file_exists = os.path.isfile(file_path)
+        df.to_csv(file_path,mode='a' if file_exists else 'w', header=not file_exists, index=False)
+        print(f"Saved {file_name}.csv to {file_path}")
+
     def _debug_batch_timing(self, loop_name, exog_series: pd.DataFrame | None, actuals_series: pd.Series):
         print("="*50)
         print(f"{loop_name} Loop Debug Info:")

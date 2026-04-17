@@ -11,4 +11,4 @@ __pycache__/
 *_test_metrics.csv
 *.png
 *.pkl
-test_results/*
+timexer*

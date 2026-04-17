@@ -46,15 +46,13 @@ class GradientBoostingModel(BaseModel):
             "mae": [mae],
             **{k: [v] for k, v in self.config.config_params_to_results.items()}
         })
-        os.makedirs(os.path.join(self.nsw_data_loader.output_dir, "gradient_boosting_models"), exist_ok=True)
-        with open(os.path.join(self.nsw_data_loader.output_dir, "gradient_boosting_models", f"{self.config.task_id}_model.pkl"), "wb") as f:
-            pickle.dump(self.model, f)
-            print(f"Saved trained model to gradient_boosting_models/{self.config.task_id}_model.pkl")
-        os.makedirs(os.path.join(NSWDataLoader.output_dir, "gradient_boosting_results"), exist_ok=True)
+        self.pickle_save_checkpoints(self.model, "gradient_boosting_models", f"{self.config.task_id}_model.pkl")
         if self.config.save_training_log:
-            _gb_fit_log_path = os.path.join(NSWDataLoader.output_dir, "gradient_boosting_results", f"{self.config.task_id}_fitting_log.csv")
-            _gb_fit_log_exists = os.path.isfile(_gb_fit_log_path)
-            progress_log_df.to_csv(_gb_fit_log_path, mode='a' if _gb_fit_log_exists else 'w', header=not _gb_fit_log_exists, index=False)
+            self.save_df(progress_log_df, "gradient_boosting_results", f"{self.config.task_id}_fitting_log")
+        return self.model
+
+    def load_model(self, file_name: str):
+        self.model = self.pickle_load_checkpoints("gradient_boosting_models", file_name)
         return self.model
 
     def evaluate_model(self, model_fit: GradientBoostingRegressor | str | None, test_mode=0):
@@ -64,8 +62,7 @@ class GradientBoostingModel(BaseModel):
             else:
                 _model_fit = self.model
         elif isinstance(model_fit, str):
-            with open(os.path.join(self.nsw_data_loader.output_dir, "gradient_boosting_models", model_fit), "rb") as f:
-                _model_fit = pickle.load(f)
+            _model_fit = self.load_model(model_fit)
             if _model_fit is None:
                 raise ValueError("Model not found in gradient_boosting_models directory. Please check the file name and try again or use train_model() to train a new model.")
         elif isinstance(model_fit, GradientBoostingRegressor):
@@ -137,7 +134,8 @@ class GradientBoostingModel(BaseModel):
         mae = mean_absolute_error(all_actuals, all_preds)    # use MAE
         print(f"{'Test' if test_mode else 'Validation'} Results - RMSE: {rmse:.2f} MW | MAE: {mae:.2f} MW")
         results_df = pd.DataFrame({
-            'index': all_origins,
+            'origins': all_origins,
+            'horizon': [i % self.config.forecast_horizon for i in range(len(all_actuals))],
             'timestamp': all_timestamps,
             'y_actual': all_actuals,
             'y_pred': all_preds
@@ -151,16 +149,10 @@ class GradientBoostingModel(BaseModel):
             **{k: [v] for k, v in self.config.config_params_to_results.items()}
         })
         if test_mode:
-            os.makedirs(os.path.join(NSWDataLoader.output_dir, "gradient_boosting_results"), exist_ok=True)
+            folder_name = "gradient_boosting_results"
             if self.config.save_test_results:
-                _gb_res_path = os.path.join(NSWDataLoader.output_dir, "gradient_boosting_results", f"{self.config.task_id}_test_results.csv")
-                _gb_res_exists = os.path.isfile(_gb_res_path)
-                results_df.to_csv(_gb_res_path, mode='a' if _gb_res_exists else 'w', header=not _gb_res_exists, index=False)
-            _gb_met_path = os.path.join(NSWDataLoader.output_dir, "gradient_boosting_results", f"{self.config.task_id}_test_metrics.csv")
-            _gb_met_exists = os.path.isfile(_gb_met_path)
-            metrics_df.to_csv(_gb_met_path, mode='a' if _gb_met_exists else 'w', header=not _gb_met_exists, index=False)
-            print(f"Saved detailed rolling forecast results to gradient_boosting_results/{self.config.task_id}_test_results.csv")
-            print(f"Saved metrics to gradient_boosting_results/{self.config.task_id}_test_metrics.csv")
+                self.save_df(results_df, folder_name, f"{self.config.task_id}_test_results")
+            self.save_df(metrics_df, folder_name, f"{self.config.task_id}_test_metrics")
         return all_actuals, all_preds, rmse, mae
 
 
@@ -355,8 +347,6 @@ class LSTMModel(DeepLearningModel):
             best_state = deepcopy(self.model.state_dict())
 
         if self.config.save_training_log:
-            results_path = os.path.join(NSWDataLoader.output_dir, f"LSTM_results")
-            os.makedirs(results_path, exist_ok=True)
             progress_log = {
                 "epoch": list(range(1, self.total_epochs_run + 1)),
                 "train_loss": train_losses,
@@ -366,12 +356,9 @@ class LSTMModel(DeepLearningModel):
                 **{k: [v] * self.total_epochs_run for k, v in self.config.config_params_to_results.items()}
             }
             progress_log_df = pd.DataFrame(progress_log)
-            _lstm_fit_log_path = os.path.join(results_path, f"{self.config.task_id}_fitting_log.csv")
-            _lstm_fit_log_exists = os.path.isfile(_lstm_fit_log_path)
-            progress_log_df.to_csv(_lstm_fit_log_path, mode='a' if _lstm_fit_log_exists else 'w', header=not _lstm_fit_log_exists, index=False)
+            self.save_df(progress_log_df, "LSTM_results", f"{self.config.task_id}_fitting_log")
 
-        # if show_live_plots:
-        #     plot_training_history(train_losses, val_losses, title=title)
+        self.torch_save_checkpoints(best_state, "lstm_models", f"{self.config.task_id}_best_model.pth")
 
         return {
             "model": self.model,
@@ -381,6 +368,10 @@ class LSTMModel(DeepLearningModel):
             "train_losses": train_losses,
             "val_losses": val_losses,
         }
+
+    def load_model(self, file_name: str):
+        self.torch_load_checkpoints("lstm_models", file_name)
+        return self.model
 
     
     def _compute_inverse_scaling(self, shape, pred, true):
@@ -398,6 +389,7 @@ class LSTMModel(DeepLearningModel):
             return pred_inverse, true_inverse
     
     def evaluate_model(self, tolerance_pct=10.0, test_mode: int = 0):
+
         dataset, data_loader = self._get_data(flag='test' if test_mode else 'val')
         self.model.eval()
         y_pred_raw = []
@@ -482,8 +474,8 @@ class LSTMModel(DeepLearningModel):
             "batch_number": batch_nums.astype(int),
             "horizon": horizon_windows.astype(int),
             "timestamp": timestamps,
-            "y_pred_real": y_pred_real,
-            "y_true_real": y_true_real
+            "y_pred": y_pred_real,
+            "y_actual": y_true_real
         }
         results_df = pd.DataFrame(eval_dict)
         metrics_df = pd.DataFrame({
@@ -498,17 +490,9 @@ class LSTMModel(DeepLearningModel):
             "early_stop_epoch": [self.early_stop_epoch],
             **{k: [v] for k, v in self.config.config_params_to_results.items()}
         })
-        results_path = os.path.join(NSWDataLoader.output_dir, f"LSTM_results")
-        if not os.path.exists(results_path):
-            os.makedirs(results_path)
         if self.config.save_test_results:
-            _lstm_res_path = os.path.join(results_path, f"{self.config.task_id}_{self.config.model_type.value}_test_results.csv")
-            _lstm_res_exists = os.path.isfile(_lstm_res_path)
-            results_df.to_csv(_lstm_res_path, mode='a' if _lstm_res_exists else 'w', header=not _lstm_res_exists, index=False)
-        _lstm_met_path = os.path.join(results_path, f"{self.config.task_id}_{self.config.model_type.value}_test_metrics.csv")
-        _lstm_met_exists = os.path.isfile(_lstm_met_path)
-        metrics_df.to_csv(_lstm_met_path, mode='a' if _lstm_met_exists else 'w', header=not _lstm_met_exists, index=False)
-        print(f"Saved detailed rolling forecast results to {results_path}/{self.config.task_id}_{self.config.model_type.value}_test_results.csv")
+            self.save_df(results_df, "LSTM_results", f"{self.config.task_id}_test_results")
+        self.save_df(metrics_df, "LSTM_results", f"{self.config.task_id}_test_metrics")
         return eval_dict
     
 
@@ -565,13 +549,6 @@ class TransformersModel(DeepLearningModel):
     def train_model(self):
         dataset, data_loader = self._get_data(flag='train')
 
-        checkpoint_path = os.path.join(NSWDataLoader.output_dir, f"{self.config.model.value}_checkpoints")
-        if not os.path.exists(checkpoint_path):
-            os.makedirs(checkpoint_path)
-        results_path = os.path.join(NSWDataLoader.output_dir, f"{self.config.model.value}_results")
-        if not os.path.exists(results_path):
-            os.makedirs(results_path)
-
         time_now = time()
 
         train_steps = len(data_loader)
@@ -603,7 +580,9 @@ class TransformersModel(DeepLearningModel):
             'validation_mse': [],
             'time_taken_seconds': []
         }
-
+        checkpoint_path = os.path.join(NSWDataLoader.output_dir, f"{self.config.model.value}_checkpoints")
+        if not os.path.exists(checkpoint_path):
+            os.makedirs(checkpoint_path)
         for epoch in range(self.config.training_epochs):
             iter_count = 0
             train_loss = []
@@ -686,23 +665,22 @@ class TransformersModel(DeepLearningModel):
         progress_log.update({k: [v] * len(progress_log['epoch']) for k, v in self.config.config_params_to_results.items()})
         fitting_progress_log_df = pd.DataFrame(progress_log)
         if self.config.save_training_log:
-            _fit_log_path = os.path.join(results_path, f"{self.config.task_id}_fitting_log.csv")
-            _fit_log_exists = os.path.isfile(_fit_log_path)
-            fitting_progress_log_df.to_csv(_fit_log_path, mode='a' if _fit_log_exists else 'w', header=not _fit_log_exists, index=False)
+            self.save_df(fitting_progress_log_df, f"{self.config.model.value}_results", f"{self.config.task_id}_fitting_log")
         return self.model
-    
+
+    def load_model(self, file_name: str):
+        self.torch_load_checkpoints(f"{self.config.model.value}_checkpoints", file_name)
+        return self.model
+
     def evaluate_model(self, test_mode=0):
         dataset, data_loader = self._get_data(flag='test' if test_mode else 'val')
-        results_path = os.path.join(NSWDataLoader.output_dir, f"{self.config.model.value}_results")
-        if not os.path.exists(results_path):
-            os.makedirs(results_path)
         checkpoint_path = os.path.join(NSWDataLoader.output_dir, f"{self.config.model.value}_checkpoints")
         if not os.path.exists(checkpoint_path):
             os.makedirs(checkpoint_path)
 
         if test_mode:
             print('loading model')
-            self.model.load_state_dict(torch.load(os.path.join(checkpoint_path, f'{self.config.task_id}_checkpoint.pth')))
+            self.load_model(f'{self.config.task_id}_checkpoint.pth')
 
 
         criterion = self._select_criterion()
@@ -773,7 +751,7 @@ class TransformersModel(DeepLearningModel):
         
         # result save
         results_df = pd.DataFrame({
-            'index': batch_nums.flatten().astype(int),
+            'batch_number': batch_nums.flatten().astype(int),
             'horizon': batch_windows.flatten().astype(int),
             'timestamp': timestamps.flatten(),
             'y_actual': trues[:, :, -1].flatten(),
@@ -790,14 +768,10 @@ class TransformersModel(DeepLearningModel):
         })
         if test_mode:
             print(f"Test Results - MAE: {mae:.2f} MW | RMSE: {rmse:.2f} MW | MSE: {mse:.2f} MW^2")
+            folder_name = f"{self.config.model.value}_results"
             if self.config.save_test_results:
-                _res_path = os.path.join(results_path, f"{self.config.task_id}_test_results.csv")
-                _res_exists = os.path.isfile(_res_path)
-                results_df.to_csv(_res_path, mode='a' if _res_exists else 'w', header=not _res_exists, index=False)
-            _met_path = os.path.join(results_path, f"{self.config.task_id}_test_metrics.csv")
-            _met_exists = os.path.isfile(_met_path)
-            metrics_df.to_csv(_met_path, mode='a' if _met_exists else 'w', header=not _met_exists, index=False)
-            print(f"Saved detailed rolling forecast results to {results_path}/{self.config.task_id}_test_results.csv")
+                self.save_df(results_df, folder_name, f"{self.config.task_id}_test_results")
+            self.save_df(metrics_df, folder_name, f"{self.config.task_id}_test_metrics")
         else:
             self.model.train()
         return batch_nums.flatten().astype(int), timestamps.flatten(), trues[:, :, -1].flatten(), preds[:, :, -1].flatten(), batch_windows.flatten(), mae, rmse, mse, total_loss
@@ -822,6 +796,8 @@ class SarimaxModel(BaseModel):
         self.best_order = None
         self.best_seasonal_order = None
         self.config: SARIMAXConfig = config
+        self.results_folder_name = "sarimax_results"
+        self.models_folder_name = "sarimax_models"
    
     def train_model(self):
         # only use the most recent 'lookback_window' data points for training, if lookback_window is specified in the config
@@ -891,14 +867,14 @@ class SarimaxModel(BaseModel):
         if self.config.save_training_log:
             progress_log.update({k: [v] * len(progress_log['model_name']) for k, v in self.config.config_params_to_results.items()})
             fitting_progress_log_df = pd.DataFrame(progress_log)
-            os.makedirs(os.path.join(NSWDataLoader.output_dir, "sarimax_results"), exist_ok=True)
-            _sarimax_fit_log_path = os.path.join(NSWDataLoader.output_dir, "sarimax_results", f"{self.config.task_id}_fitting_log.csv")
-            _sarimax_fit_log_exists = os.path.isfile(_sarimax_fit_log_path)
-            fitting_progress_log_df.to_csv(_sarimax_fit_log_path, mode='a' if _sarimax_fit_log_exists else 'w', header=not _sarimax_fit_log_exists, index=False)
-        os.makedirs(os.path.join(NSWDataLoader.output_dir, "sarimax_models"), exist_ok=True)
-        self.best_model.save(os.path.join(NSWDataLoader.output_dir, "sarimax_models", f"{self.config.task_id}_model.pkl"))
+            self.save_df(fitting_progress_log_df, self.results_folder_name, f"{self.config.task_id}_fitting_log")
+        self.pickle_save_checkpoints(self.best_model, self.models_folder_name, f"{self.config.task_id}_model.pkl")
         print("Training complete. Saved best model and fitting progress log.")
-    
+
+    def load_model(self, file_name: str):
+        self.best_model = self.pickle_load_checkpoints(self.models_folder_name, file_name)
+        return self.best_model
+
     def evaluate_model(self, model_fit:SARIMAXResultsWrapper | str | None, test_mode: bool = False):
         if model_fit is None:
             if self.best_model is None:
@@ -906,7 +882,7 @@ class SarimaxModel(BaseModel):
             else:
                 _model_fit = self.best_model
         elif isinstance(model_fit, str):
-            _model_fit = SARIMAXResultsWrapper.load(os.path.join(self.nsw_data_loader.output_dir, "sarimax_models", model_fit))
+            _model_fit = self.load_model(model_fit)
             if _model_fit is None:
                 raise ValueError("Model not found in sarimax_models directory. Please check the file name and try again or use train_model() to train a new model.")
         elif isinstance(model_fit, SARIMAXResultsWrapper):
@@ -982,7 +958,8 @@ class SarimaxModel(BaseModel):
         rmse = np.sqrt(mse)
         print(f"Rolling Forecast (h={self.config.forecast_horizon} steps) — Validation MAE: {mae:.2f} MW | Validation RMSE: {rmse:.2f} MW")
         results_df = pd.DataFrame({
-            'index': all_origins,
+            'origins': all_origins,
+            'horizon': [i % self.config.forecast_horizon for i in range(len(all_actuals))],
             'timestamp': all_timestamps,
             'y_actual': all_actuals,
             'y_pred': all_predictions
@@ -997,14 +974,8 @@ class SarimaxModel(BaseModel):
             **{k: [v] for k, v in self.config.config_params_to_results.items()}
         })
         if test_mode:
-            os.makedirs(os.path.join(NSWDataLoader.output_dir, "sarimax_results"), exist_ok=True)
             if self.config.save_test_results:
-                _sarimax_res_path = os.path.join(NSWDataLoader.output_dir, "sarimax_results", f"{self.config.task_id}_test_results.csv")
-                _sarimax_res_exists = os.path.isfile(_sarimax_res_path)
-                results_df.to_csv(_sarimax_res_path, mode='a' if _sarimax_res_exists else 'w', header=not _sarimax_res_exists, index=False)
-            _sarimax_met_path = os.path.join(NSWDataLoader.output_dir, "sarimax_results", f"{self.config.task_id}_test_metrics.csv")
-            _sarimax_met_exists = os.path.isfile(_sarimax_met_path)
-            metrics_df.to_csv(_sarimax_met_path, mode='a' if _sarimax_met_exists else 'w', header=not _sarimax_met_exists, index=False)
-            print(f"Saved detailed rolling forecast results to sarimax_results/{self.config.task_id}_test_results.csv")
+                self.save_df(results_df, self.results_folder_name, f"{self.config.task_id}_test_results")
+            self.save_df(metrics_df, self.results_folder_name, f"{self.config.task_id}_test_metrics")
         return all_origins, all_timestamps, all_actuals, all_predictions, mae, rmse, mse
      
