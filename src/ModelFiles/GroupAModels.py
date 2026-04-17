@@ -20,8 +20,8 @@ import pickle
 
 
 class GradientBoostingModel(BaseModel):
-    def __init__(self, config: GradientBoostingConfig, func: Callable[[pd.DataFrame, str, list[int], list[int], list[tuple[str, int]]], pd.DataFrame] | None = None):
-        super().__init__(config, func)
+    def __init__(self, config: GradientBoostingConfig, func: Callable[[pd.DataFrame, str, list[int], list[int], list[tuple[str, int]]], pd.DataFrame] | None = None, specific_output_dir: str | None = None):
+        super().__init__(config, func, specific_output_dir)
         self.config: GradientBoostingConfig = config
         if config.eval_step_size > config.forecast_horizon:
             print(f"Warning: eval_step_size {config.eval_step_size} is greater than forecast_horizon {config.forecast_horizon}. Setting eval_step_size to forecast_horizon.")
@@ -157,8 +157,8 @@ class GradientBoostingModel(BaseModel):
 
 
 class LSTMModel(DeepLearningModel):
-    def __init__(self, config: LSTMConfig, func: Callable[[pd.DataFrame, str, list[int], list[int], list[tuple[str, int]]], pd.DataFrame] | None = None):
-        super().__init__(config, func)
+    def __init__(self, config: LSTMConfig, func: Callable[[pd.DataFrame, str, list[int], list[int], list[tuple[str, int]]], pd.DataFrame] | None = None, specific_output_dir: str | None = None):
+        super().__init__(config, func, specific_output_dir)
         self.config: LSTMConfig = config
         self.model = self._build_model(config, input_size=len(self.config.all_feature_cols)+1)
         self.total_epochs_run: int | None = None
@@ -498,7 +498,7 @@ class LSTMModel(DeepLearningModel):
 
 class TransformersModel(DeepLearningModel):
     """Unified wrapper for PatchTST, iTransformer, TimeXer and other transformer-based models."""
-    def __init__(self, config: TransformersConfig, func: Callable[[pd.DataFrame, str, list[int], list[int], list[tuple[str, int]]], pd.DataFrame] | None = None):
+    def __init__(self, config: TransformersConfig, func: Callable[[pd.DataFrame, str, list[int], list[int], list[tuple[str, int]]], pd.DataFrame] | None = None, specific_output_dir: str | None = None):
         self.variate = config.variate
         self.patch_len = config.patch_len
         self.stride = config.stride
@@ -778,8 +778,8 @@ class TransformersModel(DeepLearningModel):
 
 
 class SarimaxModel(BaseModel):
-    def __init__(self, config: SARIMAXConfig, func: Callable[[pd.DataFrame, str, list[int], list[int], list[tuple[str, int]]], pd.DataFrame] | None = None):
-        super().__init__(config, func)
+    def __init__(self, config: SARIMAXConfig, func: Callable[[pd.DataFrame, str, list[int], list[int], list[tuple[str, int]]], pd.DataFrame] | None = None, specific_output_dir: str | None = None):
+        super().__init__(config, func, specific_output_dir)
         self.p = config.p
         self.d = config.d
         self.q = config.q
