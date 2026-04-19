@@ -17,9 +17,10 @@ def plot_training_history(train_losses, val_losses, best_epoch=None, title="Trai
     plt.show()
 
 
-def plot_predictions(results_dict: dict[str,dict[int,pd.DataFrame]], horizon:int, start_date: str):
+def plot_predictions(results_dict: dict[str,dict[int,pd.DataFrame]], horizon:int, start_date: str, extra_time_steps: int = 48):
     plt.figure(figsize=(12, 5))
     model_names = results_dict.keys()
+    actuals = None
     for i, model_name in enumerate(model_names):
         min_date = pd.to_datetime(max(results_dict[model_name][horizon]['timestamp'].min(), results_dict['SARIMAX'][horizon]['timestamp'].min()))
         max_date = pd.to_datetime(min(results_dict[model_name][horizon]['timestamp'].max(), results_dict['SARIMAX'][horizon]['timestamp'].max()))
@@ -30,17 +31,21 @@ def plot_predictions(results_dict: dict[str,dict[int,pd.DataFrame]], horizon:int
         df = results_dict[model_name][horizon]
         start_index = df[(df['timestamp'] >= start_date) & (df['horizon'] == 0)].index[0]
         end_index = start_index + horizon - 1
-        df = df.loc[start_index:end_index]
-        df = df[['timestamp', 'y_pred', 'y_actual']]
-        if i == 0:
-            actuals = df['y_actual']  # use the first model's actuals for plotting
-        plt.plot(df['timestamp'], df['y_pred'], label=model_name)
-    plt.plot(df['timestamp'], actuals, label='Actual', linestyle='--')
+        df = df.loc[start_index:end_index + extra_time_steps]
+        df = df[['timestamp', 'y_pred']]
+        if model_name.lower() == 'actuals':
+            actuals = df['y_pred'].values
+        else:
+            plt.plot(df['timestamp'], df['y_pred'], label=model_name)
+    if actuals is not None:
+        plt.plot(df['timestamp'], actuals, label='Actual', linestyle='--')
     plt.legend()
     plt.xticks(rotation=90, fontsize=8)
     plt.yticks(fontsize=8)
     # xticks every 6 hours (12 data points) for better readability
     plt.gca().xaxis.set_major_locator(ticker.MultipleLocator(12))
+    # xticks to have format "YYYY-MM-DD HH:MM"
+    #plt.gca().xaxis.set_major_formatter(ticker.FuncFormatter(lambda x, _: pd.to_datetime(x).strftime('%Y-%m-%d %H:%M')))
     plt.xlabel('Timestamp')
     plt.ylabel('Electricity Demand (MW)')
     plt.title(f'Model Predictions vs Actuals (Horizon={horizon} steps)')
