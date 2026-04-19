@@ -8,7 +8,6 @@ __pycache__/
 *.pth
 *.npy
 *_fitting_log.csv
-*_test_metrics.csv
 *.png
 *.pkl
 timexer*
