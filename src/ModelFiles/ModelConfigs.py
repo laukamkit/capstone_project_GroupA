@@ -4,7 +4,7 @@ from ModelFiles.ModelEnums import *
 __all__ = ["TransformersConfig", "SARIMAXConfig", "LSTMConfig", "HORIZONS", "SEEDS"]
 
 HORIZONS = [48, 336, 720]
-SEEDS = [31415, 27182, 14142, 17320, 22360, 57721]#, 66987, 11235, 98765, 43210]
+SEEDS = [31415, 27182, 14142, 17320, 22360, 57721]
 
 @dataclass
 class Config:
@@ -23,7 +23,7 @@ class Config:
     eval_step_size: int = 1
     save_training_log: bool = False
     save_test_results: bool = False
-    save_model: bool = True
+    save_model: bool = False
     debug: bool = False
     @property
     def all_feature_cols(self) -> list[str]:
