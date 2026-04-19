@@ -34,15 +34,20 @@ class GradientBoostingModel(BaseModel):
         )
 
     def train_model(self):
+        start = time()
         x_train = self.training_data[self.config.all_feature_cols].copy()
         y_train = self.training_data[self.config.target_col].copy()
         self.model.fit(x_train, y_train)
         _, _, rmse, mae = self.evaluate_model(None, test_mode=0)
+        end = time()
+        print(f"Training completed in {end - start:.2f} seconds.")
+
         progress_log_df = pd.DataFrame({
             "task_id": [self.config.task_id],
             "model_type": ["GradientBoosting"],
             "rmse": [rmse],
             "mae": [mae],
+            "time_taken_seconds": [end - start],
             **{k: [v] for k, v in self.config.config_params_to_results.items()}
         })
         if self.config.save_model:
