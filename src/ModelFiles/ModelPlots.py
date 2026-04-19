@@ -1,10 +1,13 @@
 import matplotlib.pyplot as plt
 import matplotlib.ticker as ticker
 import pandas as pd
-def plot_training_history(train_losses, val_losses, title="Training History"):
+
+def plot_training_history(train_losses, val_losses, best_epoch=None, title="Training History"):
     plt.figure(figsize=(8, 4))
     plt.plot(train_losses, label="Train Loss")
     plt.plot(val_losses, label="Val Loss")
+    if best_epoch is not None:
+        plt.axvline(x=best_epoch, color='r', linestyle='--', alpha=0.3, label='Best Epoch')
     plt.xlabel("Epoch")
     plt.ylabel("MSE Loss (scaled)")
     plt.title(title)
