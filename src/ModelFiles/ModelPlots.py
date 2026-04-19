@@ -11,7 +11,7 @@ def plot_training_history(train_losses, val_losses, best_epoch=None, title="Trai
     plt.xlabel("Epoch")
     plt.ylabel("MSE Loss (scaled)")
     plt.title(title)
-    plt.legend()
+    plt.legend(fontsize=8)
     plt.grid(True, alpha=0.3)
     plt.tight_layout()
     plt.show()
@@ -22,8 +22,8 @@ def plot_predictions(results_dict: dict[str,dict[int,pd.DataFrame]], horizon:int
     model_names = results_dict.keys()
     actuals = None
     for i, model_name in enumerate(model_names):
-        min_date = pd.to_datetime(max(results_dict[model_name][horizon]['timestamp'].min(), results_dict['SARIMAX'][horizon]['timestamp'].min()))
-        max_date = pd.to_datetime(min(results_dict[model_name][horizon]['timestamp'].max(), results_dict['SARIMAX'][horizon]['timestamp'].max()))
+        min_date = pd.to_datetime(max(results_dict[model_name][horizon]['timestamp'].min(), results_dict[model_name][horizon]['timestamp'].min()))
+        max_date = pd.to_datetime(min(results_dict[model_name][horizon]['timestamp'].max(), results_dict[model_name][horizon]['timestamp'].max()))
         _start_date = pd.to_datetime(start_date)
         assert _start_date >= min_date and _start_date <= max_date, f"start_date is out of range: {_start_date} not in [{min_date}, {max_date}]"
         _end_date = _start_date + pd.Timedelta(hours=horizon // 2)
@@ -39,7 +39,7 @@ def plot_predictions(results_dict: dict[str,dict[int,pd.DataFrame]], horizon:int
             plt.plot(df['timestamp'], df['y_pred'], label=model_name)
     if actuals is not None:
         plt.plot(df['timestamp'], actuals, label='Actual', linestyle='--')
-    plt.legend()
+    plt.legend(fontsize=8)
     plt.xticks(rotation=90, fontsize=8)
     plt.yticks(fontsize=8)
     # xticks every 6 hours (12 data points) for better readability
