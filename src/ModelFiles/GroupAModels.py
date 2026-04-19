@@ -16,7 +16,6 @@ from copy import deepcopy
 from torch import optim
 from torch.optim import lr_scheduler
 from typing import Callable
-import pickle
 
 
 class GradientBoostingModel(BaseModel):
@@ -354,6 +353,7 @@ class LSTMModel(DeepLearningModel):
                 "val_loss": val_losses,
                 "best_epoch": [self.best_epoch] * self.total_epochs_run,
                 "early_stop_epoch": [self.early_stop_epoch] * self.total_epochs_run,
+                "num_parameters": [sum(p.numel() for p in self.model.parameters())] * self.total_epochs_run,
                 **{k: [v] * self.total_epochs_run for k, v in self.config.config_params_to_results.items()}
             }
             progress_log_df = pd.DataFrame(progress_log)
@@ -572,6 +572,7 @@ class TransformersModel(DeepLearningModel):
 
         progress_log = {
             'model_name': [],
+            'num_parameters': [],
             'lookback_window': [],
             'epoch': [],
             'training_loss': [],
@@ -635,6 +636,7 @@ class TransformersModel(DeepLearningModel):
                 best_val_rmse_train = rmse_val
                 best_epoch_train = epoch + 1
             progress_log['model_name'].append(self.config.task_id)
+            progress_log['num_parameters'].append(sum(p.numel() for p in self.model.parameters()))
             progress_log['lookback_window'].append(self.config.lookback_window)
             progress_log['epoch'].append(epoch + 1)
             progress_log['training_loss'].append(train_loss)
