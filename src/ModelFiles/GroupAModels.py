@@ -277,7 +277,7 @@ class LSTMModel(DeepLearningModel):
         dataset, data_loader = self._get_data(flag='train')
         train_losses = []
         val_losses = []
-
+        val_rmse = []
         best_val_loss = float("inf")
         best_epoch = -1
         best_state = None
@@ -316,18 +316,18 @@ class LSTMModel(DeepLearningModel):
 
             self.model.eval()
 
-            epoch_val_loss = self.evaluate_model(test_mode=0)['_']
-            val_losses.append(epoch_val_loss)
-
+            epoch_val = self.evaluate_model(test_mode=0)
+            val_losses.append(epoch_val["loss"])
+            val_rmse.append(epoch_val["rmse"])
             if scheduler is not None:
                 if isinstance(scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau):
-                    scheduler.step(epoch_val_loss)
+                    scheduler.step(epoch_val["loss"])
                 else:
                     scheduler.step()
 
             # Stops the training when the val loss meets a certain condition
-            if epoch_val_loss < best_val_loss:
-                best_val_loss = epoch_val_loss
+            if epoch_val["loss"] < best_val_loss:
+                best_val_loss = epoch_val["loss"]
                 best_epoch = epoch
                 best_state = deepcopy(self.model.state_dict())
                 epochs_no_improve = 0
@@ -337,7 +337,9 @@ class LSTMModel(DeepLearningModel):
             print(
                 f"Epoch [{epoch+1}/{self.config.training_epochs}] | "
                 f"Train Loss: {epoch_train_loss:.6f} | "
-                f"Val Loss: {epoch_val_loss:.6f}"
+                f"Val Loss: {epoch_val['loss']:.6f} | "
+                f"RMSE: {epoch_val['rmse']:.6f} | "
+                f"MAE: {epoch_val['mae']:.6f}"
             )
 
             if epochs_no_improve >= self.config.patience:
@@ -356,6 +358,7 @@ class LSTMModel(DeepLearningModel):
                 "epoch": list(range(1, self.total_epochs_run + 1)),
                 "train_loss": train_losses,
                 "val_loss": val_losses,
+                "val_rmse": val_rmse,
                 "best_epoch": [self.best_epoch] * self.total_epochs_run,
                 "early_stop_epoch": [self.early_stop_epoch] * self.total_epochs_run,
                 "num_parameters": [sum(p.numel() for p in self.model.parameters())] * self.total_epochs_run,
@@ -439,9 +442,6 @@ class LSTMModel(DeepLearningModel):
         y_pred_raw = np.array(y_pred_raw).reshape(-1, 1)
         y_actual_raw = np.array(y_actual_raw).reshape(-1, 1)
         test_loss = mean_squared_error(y_pred_raw, y_actual_raw)
-        if test_mode == 0:
-            return {"_": test_loss}
-
         horizon_windows = np.array(horizon_windows).reshape(-1, 1)
         timestamps = np.array(timestamps, dtype='<M8[us]').reshape(-1, 1)
         batch_nums = np.array(batch_nums).reshape(-1, 1)
@@ -470,7 +470,8 @@ class LSTMModel(DeepLearningModel):
             np.mean(np.abs((y_true_real[mask] - y_pred_real[mask]) / y_true_real[mask])) * 100
             if np.any(mask) else np.nan
         )
-
+        if test_mode == 0:
+            return {"loss": test_loss, "rmse": rmse, "mae": mae}
         tolerance = tolerance_pct / 100.0
         within_tol_acc = np.mean(
             np.abs(y_pred_real - y_true_real) <= tolerance * np.abs(y_true_real)
@@ -481,7 +482,9 @@ class LSTMModel(DeepLearningModel):
             "horizon": horizon_windows.astype(int),
             "timestamp": timestamps,
             "y_pred": y_pred_real,
-            "y_actual": y_true_real
+            "y_actual": y_true_real,
+            "rmse": rmse,
+            "mae": mae,
         }
         results_df = pd.DataFrame(eval_dict)
         metrics_df = pd.DataFrame({
