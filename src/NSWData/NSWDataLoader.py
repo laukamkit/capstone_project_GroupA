@@ -23,6 +23,8 @@ class NSWDataLoader:
         possible_paths = [
             os.path.join("capstone_project_GroupA", "data", "NSW"),
             str(Path.cwd().resolve().parents[0] / 'data' / 'NSW'),
+            str(Path.cwd().resolve().parents[1] / 'data' / 'NSW'),
+            str(Path.cwd().resolve().parents[2] / 'data' / 'NSW'),
             os.path.join(str(os.getcwd()), "data", "NSW"),
         ]
         for path in possible_paths:

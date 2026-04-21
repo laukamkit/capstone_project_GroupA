@@ -16,6 +16,8 @@ class BaseModel:
         self.nsw_data_loader = NSWDataLoader()
         self.train, self.validation, self.test, self.train_scaled, self.val_scaled, self.test_scaled, self.scaler = self.nsw_data_loader.load_data()
         training_data = self.train_scaled if self.config.scale else self.train
+        if self.config.training_data_size is not None:
+            training_data = training_data.iloc[-1*self.config.training_data_size:]
         validation_data = self.val_scaled if self.config.scale else self.validation
         test_data = self.test_scaled if self.config.scale else self.test
         full_data = pd.concat([training_data, validation_data, test_data], axis=0)

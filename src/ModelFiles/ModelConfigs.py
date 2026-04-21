@@ -25,6 +25,7 @@ class Config:
     save_test_results: bool = False
     save_model: bool = False
     debug: bool = False
+    training_data_size: int | None = None # if not None, will limit the size of the training data to this number of rows (after train/val/test split). Used for debugging with smaller dataset.
     @property
     def all_feature_cols(self) -> list[str]:
         lag_feature_cols = []
