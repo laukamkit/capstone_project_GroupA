@@ -8,8 +8,7 @@ __pycache__/
 *.pth
 *.npy
 *_fitting_log.csv
-*.png
-*.pkl
+
 timexer*
 
 results/*_tuning/
