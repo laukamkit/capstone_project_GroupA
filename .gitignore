@@ -7,8 +7,5 @@ __pycache__/
 
 *.pth
 *.npy
-*_fitting_log.csv
 
 timexer*
-
-results/*_tuning/

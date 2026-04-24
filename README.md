@@ -9,10 +9,9 @@ Complete the information below regarding your group.
 ## Group and project information
 
 ### Group members and zIDs
-- Brendan	(z5632728): Research consultant and Model analysis of SARIMAX + LSTM
+- Brendan	(z5632728): Research consultant and Model analysis of SARIMAX + LSTM + Comparison
 - Daniel	(z5623647): Presentation/Communication Lead and Model analysis of Gradient Boosting + LSTM
-- Kam	(z5618444): Project Manager, Presentation/Communication Lead and 
-Model lead of PatchTST + Comparison
+- Kam	(z5618444):     Project Manager, Presentation/Communication Lead and Model lead of PatchTST
 - Kelvin (z5502200):	Logistics coordinator, Code Refactorer, Model lead of PatchTST + SARIMAX + Comparison
 
 
