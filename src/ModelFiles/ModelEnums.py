@@ -1,3 +1,5 @@
+# This module defines the enumeration types for different model architectures of the same model family used in the project.
+# Note that not all enums were used in the project.
 from enum import Enum
 
 class LSTMModelType(str, Enum):

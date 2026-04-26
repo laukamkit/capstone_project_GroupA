@@ -1,3 +1,15 @@
+# This module contains the implementation of the Gradient Boosting and LSTM models for time series forecasting, 
+# as well as a unified wrapper for transformer-based models like PatchTST. 
+# Each model class inherits from a base model class (BasicModels.py) and implements methods 
+# for training, loading, and evaluating the model. 
+
+# The evaluation method computes metrics such as RMSE and MAE, and can save detailed results to CSV files. 
+# The training method includes support for early stopping and learning rate scheduling (where applicable).
+
+# Note that the PatchTST codes are adapted from the original implementation by the authors.
+# See README.md for references to the original code and papers.
+# The adapted model files for PatchTST are located in src/ModelFiles/PatchTST_supervised/.
+
 import pandas as pd, numpy as np,torch, torch.nn as nn
 from ModelFiles.PatchTST_supervised.models import PatchTST, TimeXer
 from ModelFiles.PatchTST_supervised.models import iTransformer

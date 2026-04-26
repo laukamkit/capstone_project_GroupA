@@ -1,3 +1,8 @@
+# This module contains dataclass definitions for model parameters, training/eval loop configurations, and other settings used in the project, 
+# as well as some global constants for horizons and seeds. 
+# Each model type (SARIMAX, LSTM, Transformers) has its own configuration dataclass that inherits from a base Config dataclass. 
+# The configuration dataclasses also have a method to convert their parameters into a dictionary format suitable for saving results.
+
 from dataclasses import dataclass, field
 from ModelFiles.ModelEnums import *
 

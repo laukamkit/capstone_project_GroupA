@@ -1,8 +1,11 @@
+# This module contains functions for plotting training history and model predictions.
+
 import matplotlib.pyplot as plt
 import matplotlib.ticker as ticker
 import pandas as pd
 
 def plot_training_history(train_losses, val_losses, best_epoch=None, title="Training History"):
+    """Plots the training and validation loss curves over epochs."""
     plt.figure(figsize=(8, 4))
     plt.plot(train_losses, label="Train Loss")
     plt.plot(val_losses, label="Val Loss")
@@ -18,6 +21,13 @@ def plot_training_history(train_losses, val_losses, best_epoch=None, title="Trai
 
 
 def plot_predictions(results_dict: dict[str,dict[int,pd.DataFrame]], horizon:int, start_date: str, extra_time_steps: int = 48):
+    """Plots the model predictions vs actuals for a given horizon and start date.
+    Args:
+        results_dict: A dictionary of the form {model_name: {horizon: DataFrame}} containing the predictions and timestamps for each model and horizon.
+        horizon: The forecast horizon (number of time steps) to plot, should only accept 48, 336 and 720. They should also be present in the results_dict as keys.
+        start_date: The start date for the plot.
+        extra_time_steps: Additional time steps to include in the plot beyond the horizon for better visualization.
+    """
     plt.figure(figsize=(12, 5))
     model_names = results_dict.keys()
     actuals = None

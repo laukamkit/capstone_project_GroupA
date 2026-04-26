@@ -44,7 +44,7 @@ The repository has the following folder structure:
     - best_models.ipynb: notebook for analysis on validation data on candidate models to get best models for each family
     - model_plots.ipynb: notebook for plotting predictions vs actuals used in the reporting
     - model_test_results.ipynb: consolidates test metric results of best models and outputs tables for reporting
-    - others: draft notebooks used to refactor code
+    - others: draft notebooks used to refactor code and Exploratory Data Analysis notebook
 
 ### Code References
 Scikit-learn.org. (2009). 3.2.4.3.6. sklearn.ensemble.GradientBoostingRegressor — scikit-learn 0.21.2 documentation. [online] Available at: https://scikit-learn.org/stable/modules/generated/sklearn.ensemble.GradientBoostingRegressor.html.
